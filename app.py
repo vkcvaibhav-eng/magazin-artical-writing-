@@ -1,5 +1,9 @@
 import os
+import re
+import zipfile
 from datetime import datetime
+from html import escape
+from io import BytesIO
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -247,6 +251,234 @@ Article:
 """.strip()
 
 
+def rewrite_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    selected_topic: str,
+    article: str,
+) -> str:
+    return f"""
+Rewrite the following Gujarati agriculture article into a stronger magazine-quality
+Agro Sandesh article.
+
+Important authorship instruction:
+- Do not claim that Dr. M. S. Swaminathan wrote the article.
+- Do not write in first person as Dr. Swaminathan.
+- Use an original Gujarati extension-writing voice inspired by his public values:
+  farmer welfare, scientific temper, field wisdom, sustainability, productivity,
+  practical hope, and respect for small and progressive farmers.
+
+Rewrite goals:
+1. Make the opening more field-based and farmer-oriented.
+2. Improve the flow: farmer problem -> scientific reason -> practical solution -> benefit.
+3. Make each recommendation clearer, more practical, and linked to farmer profit,
+   quality, yield, cost reduction, risk reduction, or long-term crop health.
+4. Remove thesis-style language, repetition, and heavy jargon.
+5. Explain technical terms immediately in simple Gujarati.
+6. Keep scientific accuracy. Do not invent official advisories, pesticide doses,
+   outbreak claims, or names of sources.
+7. When chemical control is mentioned, keep it cautious: follow label, local
+   agricultural university, KVK, or extension officer guidance.
+8. Keep the tone practical, trustworthy, hopeful, and suitable for farmers,
+   extension workers, agriculture students, and progressive growers.
+
+Target publication: Agro Sandesh
+Language: Gujarati
+Length: {article_length}
+Month: {month}
+Region: {region}
+Subject area: {subject_area}
+Crop focus: {crop_focus or "No specific crop focus"}
+
+Selected topic and research notes:
+{selected_topic}
+
+Draft article:
+{article}
+
+Return only the rewritten Gujarati article with a suitable title. Do not include
+editor notes before or after the article.
+""".strip()
+
+
+def final_editor_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    selected_topic: str,
+    article: str,
+) -> str:
+    return f"""
+Act as the final Gujarati magazine editor for Agro Sandesh.
+
+Final editorial standard:
+- Do not claim that Dr. M. S. Swaminathan wrote the article.
+- Keep an original voice inspired by his farmer-centric scientific communication.
+- Make the final article publication-ready for a Gujarati agriculture magazine.
+
+Final checks to apply silently:
+1. Strong Gujarati title.
+2. Farmer-oriented first paragraph.
+3. Clear seasonal and regional relevance.
+4. Simple scientific explanation.
+5. Practical step-by-step recommendations.
+6. Every recommendation explains farmer benefit.
+7. Good magazine flow with readable paragraphs and useful subheadings.
+8. No research-paper style headings.
+9. No unsafe pesticide dosage claims.
+10. No unsupported outbreak or official-advisory claims.
+11. Natural Gujarati language, polished grammar, and no unnecessary English.
+12. Positive practical takeaway at the end.
+
+Target publication: Agro Sandesh
+Language: Gujarati
+Length: {article_length}
+Month: {month}
+Region: {region}
+Subject area: {subject_area}
+Crop focus: {crop_focus or "No specific crop focus"}
+
+Selected topic and research notes:
+{selected_topic}
+
+Article to finalize:
+{article}
+
+Return only the final magazine-ready Gujarati article. Do not include score,
+checklist, comments, or editor notes.
+""".strip()
+
+
+def markdown_to_docx_blocks(text: str) -> list[tuple[str, str]]:
+    blocks = []
+    pending = []
+
+    def flush_pending() -> None:
+        if pending:
+            blocks.append(("Normal", " ".join(pending).strip()))
+            pending.clear()
+
+    for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            flush_pending()
+            continue
+
+        if line.startswith("#"):
+            flush_pending()
+            title = line.lstrip("#").strip()
+            if title:
+                style = "Title" if not blocks else "Heading1"
+                blocks.append((style, title))
+            continue
+
+        if line.startswith(("- ", "* ")) or re.match(r"^\d+\.\s+", line):
+            flush_pending()
+            item = re.sub(r"^([-*]|\d+\.)\s+", "", line).strip()
+            blocks.append(("ListParagraph", item))
+            continue
+
+        pending.append(line)
+
+    flush_pending()
+    return blocks or [("Normal", text.strip() or "")]
+
+
+def docx_paragraph(style: str, text: str) -> str:
+    style_xml = ""
+    if style:
+        style_xml = f'<w:pPr><w:pStyle w:val="{escape(style)}"/></w:pPr>'
+
+    if style == "ListParagraph":
+        text = f"- {text}"
+
+    return (
+        "<w:p>"
+        f"{style_xml}"
+        "<w:r>"
+        '<w:rPr><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" '
+        'w:cs="Nirmala UI"/></w:rPr>'
+        f'<w:t xml:space="preserve">{escape(text)}</w:t>'
+        "</w:r>"
+        "</w:p>"
+    )
+
+
+def make_docx(article: str) -> bytes:
+    document_body = "".join(
+        docx_paragraph(style, text) for style, text in markdown_to_docx_blocks(article)
+    )
+
+    document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    {document_body}
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+    </w:sectPr>
+  </w:body>
+</w:document>"""
+
+    styles_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+    <w:name w:val="Normal"/>
+    <w:rPr><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" w:cs="Nirmala UI"/><w:sz w:val="24"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Title">
+    <w:name w:val="Title"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:spacing w:after="240"/></w:pPr>
+    <w:rPr><w:b/><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" w:cs="Nirmala UI"/><w:sz w:val="36"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1">
+    <w:name w:val="heading 1"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr>
+    <w:rPr><w:b/><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" w:cs="Nirmala UI"/><w:sz w:val="28"/></w:rPr>
+  </w:style>
+  <w:style w:type="paragraph" w:styleId="ListParagraph">
+    <w:name w:val="List Paragraph"/>
+    <w:basedOn w:val="Normal"/>
+    <w:pPr><w:ind w:left="720"/></w:pPr>
+  </w:style>
+</w:styles>"""
+
+    content_types_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>"""
+
+    rels_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"""
+
+    doc_rels_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"""
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as docx:
+        docx.writestr("[Content_Types].xml", content_types_xml)
+        docx.writestr("_rels/.rels", rels_xml)
+        docx.writestr("word/document.xml", document_xml)
+        docx.writestr("word/styles.xml", styles_xml)
+        docx.writestr("word/_rels/document.xml.rels", doc_rels_xml)
+
+    return buffer.getvalue()
+
+
 def render_sources(title: str, sources: list[dict[str, str]]) -> None:
     if not sources:
         return
@@ -340,33 +572,130 @@ def main() -> None:
                 )
                 st.session_state["article"] = article
                 st.session_state["article_sources"] = sources
+                st.session_state["selected_topic"] = selected_topic
+                st.session_state.pop("rewritten_article", None)
+                st.session_state.pop("final_article", None)
+                st.session_state.pop("review", None)
 
     if "article" in st.session_state:
-        st.subheader("Gujarati article draft")
-        st.markdown(st.session_state["article"])
+        st.subheader("Step 1: Gujarati article draft")
+        draft_article = st.text_area(
+            "Draft article",
+            value=st.session_state["article"],
+            height=420,
+        )
+        st.session_state["article"] = draft_article
         render_sources("Article grounding sources", st.session_state.get("article_sources", []))
 
         st.download_button(
-            "Download article as TXT",
-            data=st.session_state["article"],
-            file_name="agro_sandesh_gujarati_article.txt",
+            "Download draft as TXT",
+            data=draft_article,
+            file_name="agro_sandesh_draft_article.txt",
             mime="text/plain",
         )
 
-        if st.button("Review article quality"):
+        col_review, col_rewrite = st.columns(2)
+
+        with col_review:
+            review_clicked = st.button("Review draft quality")
+
+        with col_rewrite:
+            rewrite_clicked = st.button("Rewrite in Swaminathan-inspired style")
+
+        if review_clicked:
             with st.spinner("Reviewing article quality..."):
                 review, _ = generate_text(
                     client,
                     model,
-                    review_prompt(st.session_state["article"]),
+                    review_prompt(draft_article),
                     use_search=False,
                     temperature=0.25,
                 )
                 st.session_state["review"] = review
 
+        if rewrite_clicked:
+            with st.spinner("Rewriting the article with stronger farmer-centric flow..."):
+                rewrite, _ = generate_text(
+                    client,
+                    model,
+                    rewrite_prompt(
+                        month,
+                        region,
+                        subject_area,
+                        crop_focus,
+                        article_length,
+                        st.session_state.get("selected_topic", ""),
+                        draft_article,
+                    ),
+                    use_search=False,
+                    temperature=0.55,
+                )
+                st.session_state["rewritten_article"] = rewrite
+                st.session_state.pop("final_article", None)
+
     if "review" in st.session_state:
         st.subheader("Article review")
         st.markdown(st.session_state["review"])
+
+    if "rewritten_article" in st.session_state:
+        st.subheader("Step 2: Swaminathan-inspired rewrite")
+        rewritten_article = st.text_area(
+            "Improved article",
+            value=st.session_state["rewritten_article"],
+            height=460,
+        )
+        st.session_state["rewritten_article"] = rewritten_article
+
+        st.download_button(
+            "Download rewritten article as TXT",
+            data=rewritten_article,
+            file_name="agro_sandesh_rewritten_article.txt",
+            mime="text/plain",
+        )
+
+        if st.button("Final editor check and make magazine article", type="primary"):
+            with st.spinner("Final editor is polishing the magazine-ready version..."):
+                final_article, _ = generate_text(
+                    client,
+                    model,
+                    final_editor_prompt(
+                        month,
+                        region,
+                        subject_area,
+                        crop_focus,
+                        article_length,
+                        st.session_state.get("selected_topic", ""),
+                        rewritten_article,
+                    ),
+                    use_search=False,
+                    temperature=0.35,
+                )
+                st.session_state["final_article"] = final_article
+
+    if "final_article" in st.session_state:
+        st.subheader("Step 3: Final magazine-ready article")
+        final_article = st.text_area(
+            "Final article for magazine",
+            value=st.session_state["final_article"],
+            height=520,
+        )
+        st.session_state["final_article"] = final_article
+
+        col_txt, col_docx = st.columns(2)
+        with col_txt:
+            st.download_button(
+                "Download final article as TXT",
+                data=final_article,
+                file_name="agro_sandesh_final_article.txt",
+                mime="text/plain",
+            )
+        with col_docx:
+            st.download_button(
+                "Download final article as Word DOCX",
+                data=make_docx(final_article),
+                file_name="agro_sandesh_final_article.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
 
 
 if __name__ == "__main__":
