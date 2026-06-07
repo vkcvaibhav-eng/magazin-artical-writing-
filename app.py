@@ -194,12 +194,11 @@ Writing architecture:
 3. Give the scientific reason in simple farmer-friendly language.
 4. Explain technical words immediately after using them.
 5. Connect every scientific fact with a farmer outcome.
-6. Build logical chains: cause to effect to consequence to solution.
+6. Use cause, effect, consequence, and solution as hidden thinking logic only.
 7. Keep paragraphs focused on one central idea.
-8. Every recommendation must answer:
-   - What should farmers do?
-   - Why should they do it?
-   - How does it improve yield, quality, cost, risk, sustainability, or profit?
+8. Every recommendation must naturally include what farmers should do, why it
+   matters, and how it improves yield, quality, cost, risk, sustainability, or
+   profit. Do this inside flowing paragraphs, not as a question-answer list.
 9. Make farmers, crops, productivity, quality, profitability, and sustainability
    the main subjects of sentences.
 10. Include field observations and practical examples from Indian agriculture,
@@ -211,7 +210,17 @@ Writing architecture:
 13. End with a positive, practical takeaway message.
 
 Preferred flow:
-Farmer problem -> Scientific reason -> Practical solution -> Farmer benefit.
+Farmer problem -> scientific reason -> practical solution -> farmer benefit.
+
+Style rule:
+- Keep this flow invisible to the reader. Do not print labels such as
+  "શું કરવું?", "શા માટે?", "લાભ", "મુખ્ય કારણ", "અસર", "પરિણામ",
+  "ઉકેલ", "સમસ્યા", or similar checklist headings.
+- Do not use bold/italic label blocks inside the article.
+- Use normal Gujarati magazine paragraphs and a few natural subheadings only
+  when they improve reading flow.
+- The reader should feel the logic through the paragraph rhythm, not see the
+  planning structure printed on the page.
 
 Target publication: Agro Sandesh
 Language: Gujarati
@@ -242,7 +251,9 @@ Check:
 7. Is it suitable for farmers, extension workers, agriculture students, and progressive growers?
 8. Is the Gujarati language clear and natural?
 9. Are any claims risky, unsupported, or too broad?
-10. Give a rating out of 10.
+10. Does it avoid repeated label-style blocks such as "શું કરવું?",
+    "શા માટે?", "લાભ", "મુખ્ય કારણ", "અસર", "પરિણામ", and "ઉકેલ"?
+11. Give a rating out of 10.
 
 Then provide specific improvements and rewrite only weak paragraphs if needed.
 
@@ -274,6 +285,7 @@ Important authorship instruction:
 Rewrite goals:
 1. Make the opening more field-based and farmer-oriented.
 2. Improve the flow: farmer problem -> scientific reason -> practical solution -> benefit.
+   Keep this flow invisible and express it through natural Gujarati paragraphs.
 3. Make each recommendation clearer, more practical, and linked to farmer profit,
    quality, yield, cost reduction, risk reduction, or long-term crop health.
 4. Remove thesis-style language, repetition, and heavy jargon.
@@ -284,6 +296,12 @@ Rewrite goals:
    agricultural university, KVK, or extension officer guidance.
 8. Keep the tone practical, trustworthy, hopeful, and suitable for farmers,
    extension workers, agriculture students, and progressive growers.
+9. Remove direct checklist labels and rewrite those ideas into paragraph rhythm.
+   Do not print labels such as "શું કરવું?", "શા માટે?", "લાભ",
+   "મુખ્ય કારણ", "અસર", "પરિણામ", "ઉકેલ", "સમસ્યા", or similar
+   planning headings.
+10. Do not use bold or italic marker labels inside the article. Use only natural
+    Gujarati magazine prose with occasional reader-friendly subheadings.
 
 Target publication: Agro Sandesh
 Language: Gujarati
@@ -326,14 +344,20 @@ Final checks to apply silently:
 2. Farmer-oriented first paragraph.
 3. Clear seasonal and regional relevance.
 4. Simple scientific explanation.
-5. Practical step-by-step recommendations.
-6. Every recommendation explains farmer benefit.
+5. Practical recommendations written in connected magazine prose, not repeated
+   question-answer or checklist blocks.
+6. Every recommendation explains farmer benefit inside normal paragraphs.
 7. Good magazine flow with readable paragraphs and useful subheadings.
 8. No research-paper style headings.
 9. No unsafe pesticide dosage claims.
 10. No unsupported outbreak or official-advisory claims.
 11. Natural Gujarati language, polished grammar, and no unnecessary English.
 12. Positive practical takeaway at the end.
+13. Remove direct structural labels such as "શું કરવું?", "શા માટે?",
+    "લાભ", "મુખ્ય કારણ", "અસર", "પરિણામ", "ઉકેલ", "સમસ્યા", and
+    similar checklist words when they are used as headings.
+14. Remove bold/italic label formatting and weave those ideas into smooth
+    Gujarati magazine paragraphs.
 
 Target publication: Agro Sandesh
 Language: Gujarati
