@@ -149,10 +149,24 @@ Research priorities:
 - South Gujarat and Gujarat agriculture
 - Agricultural acarology and agricultural entomology
 - Current pest and mite problems
-- Seasonal crop stage and weather-linked pest risk
+- Seasonal crop stage and month-wise agricultural activity
+- Weather-linked pest and mite risk
+- Natural enemies, IPM, monitoring, and preventive action
+- Official advisories, agricultural university/KVK guidance, research sources,
+  and current web context where useful
 - Practical advisory value for farmers
 - Relevance to this month
 - Suitability for an agricultural magazine article
+
+First create a deep research pack using multiple search angles:
+1. Current pest/mite relevance
+2. Crop stage and seasonal activity
+3. Month/weather connection
+4. Gujarat and South Gujarat relevance
+5. Field observations farmers may recognize
+6. Scientific background in simple language
+7. Natural enemies and integrated management
+8. Farmer benefit and practical relevance
 
 Return 10 topic options. For each option include:
 1. Gujarati title
@@ -162,11 +176,23 @@ Return 10 topic options. For each option include:
 5. Farmer benefit
 6. Suitability score out of 10
 
-Then select the single best topic and explain why it is the strongest choice.
+Then select the single best topic and provide a rich research dossier:
+- Why now
+- Regional/crop relevance
+- Field observations
+- Scientific background
+- Practical management
+- Farmer benefits
+- Reference quality notes with source labels: official, university/KVK,
+  government, research, news, or general web
+- Caution notes such as "verify locally", "use cautiously", or "avoid
+  overclaiming" where needed
 
 Write clearly. Do not invent local outbreaks or official advisories. If evidence is
 uncertain, say so and suggest field verification with local agricultural university,
 KVK, or extension officers.
+Do not write like a research paper. The research notes are for article support;
+do not suggest inline citations or an academic reference section for the article.
 """.strip()
 
 
@@ -221,6 +247,13 @@ Style rule:
   when they improve reading flow.
 - The reader should feel the logic through the paragraph rhythm, not see the
   planning structure printed on the page.
+
+Soft evidence guidance:
+- Use the research notes and reference quality labels as gentle guardrails.
+- Soften risky, overconfident, or locally uncertain statements.
+- Do not demand a source for every sentence.
+- Do not add inline citations, reference lists, or academic evidence language.
+- Preserve farmer usefulness, magazine rhythm, and natural Gujarati prose.
 
 Target publication: Agro Sandesh
 Language: Gujarati
@@ -359,6 +392,13 @@ Final checks to apply silently:
 14. Remove bold/italic label formatting and weave those ideas into smooth
     Gujarati magazine paragraphs.
 
+Soft evidence guidance:
+- Use the research notes and reference quality labels as gentle guardrails.
+- Soften risky, overconfident, or locally uncertain statements.
+- Do not demand a source for every sentence.
+- Do not add inline citations, reference lists, or academic evidence language.
+- Preserve farmer usefulness, magazine rhythm, and natural Gujarati prose.
+
 Target publication: Agro Sandesh
 Language: Gujarati
 Length: {article_length}
@@ -408,8 +448,20 @@ Research priorities:
 - Farmer observations and field-level symptoms
 - Scientific reason behind the problem
 - Integrated management, natural enemies, monitoring, and preventive action
+- Official advisories, agricultural university/KVK guidance, research sources,
+  and current web context where useful
 - Practical value for farmers, extension workers, agriculture students, rural
   youth, and farm advisors
+
+Build a deep research pack using several search angles before selecting the
+topic:
+- Current pest/mite or crop problem relevance
+- Month, weather, and crop-stage connection
+- Gujarat and South Gujarat field context
+- Farmer-recognizable observations for a story opening
+- Science that can be explained simply after the field situation
+- Natural enemies, IPM, monitoring, and practical decision support
+- Farmer benefit: yield, quality, cost reduction, sustainability, and profit
 
 Return:
 1. Best Gujarati article topic.
@@ -422,10 +474,16 @@ Return:
    long-term crop health.
 8. Cautions: uncertain claims, pesticide safety, and need for local verification.
 9. Source-backed notes that can guide the article.
+10. Reference quality notes. For important sources, label the source type as
+    official, university/KVK, government, research, news, or general web. Briefly
+    say what each source is useful for and where to use caution.
 
 Do not invent official outbreaks, advisories, pesticide doses, or local claims.
 When evidence is uncertain, say that field verification with local agricultural
 university, KVK, or extension officers is needed.
+Do not make the research feel like a literature review. The references should
+strengthen the story and practical guidance while keeping the final article
+magazine-like and citation-free.
 """.strip()
 
 
@@ -603,6 +661,13 @@ Final checks to apply silently:
    label blocks.
 9. It ends with confidence and practical hope.
 
+Soft evidence guidance:
+- Use the research notes and reference quality labels as gentle guardrails.
+- Soften risky, overconfident, or locally uncertain statements.
+- Do not demand a source for every sentence.
+- Do not add inline citations, reference lists, or academic evidence language.
+- Preserve storytelling, farmer usefulness, and magazine rhythm.
+
 Target publication: Agro Sandesh
 Language: Gujarati
 Length: {article_length}
@@ -657,8 +722,20 @@ Research priorities:
 - Practical observations farmers may recognize
 - Scientific explanation behind the observation, written later in simple language
 - Natural enemies, balance, patience, timely observation, and practical wisdom
+- Official advisories, agricultural university/KVK guidance, research sources,
+  and current web context where useful
 - Farmer benefit through better observation, lower cost, better decisions,
   crop health, yield, quality, and profitability
+
+Build a deep research pack using several search angles before selecting the
+topic:
+- Current pest/mite, crop, weather, or field-observation relevance
+- Month, season, crop stage, and weather connection
+- Gujarat and South Gujarat farming reality
+- Farm habits, orchard/field scenes, soil, dust, moisture, and natural balance
+- Scientific explanation that can emerge from observation
+- Natural enemies, IPM, patient monitoring, and practical wisdom
+- Farmer benefit through better observation and wiser decisions
 
 Return:
 1. Best Gujarati article topic.
@@ -670,10 +747,16 @@ Return:
 7. Practical lessons and farmer benefits.
 8. Cautions about uncertain claims, pesticide safety, and local verification.
 9. Source-backed research notes for writing the article.
+10. Reference quality notes. For important sources, label the source type as
+    official, university/KVK, government, research, news, or general web. Briefly
+    say what each source is useful for and where to use caution.
 
 Do not invent official outbreaks, advisories, pesticide doses, or local claims.
 When evidence is uncertain, say field verification with local agricultural
 university, KVK, or extension officers is needed.
+Do not make the research feel like an academic review. The references should
+quietly support a thoughtful farmer-scientist conversation, not turn the article
+into a cited report.
 """.strip()
 
 
@@ -886,6 +969,13 @@ Final checks to apply silently:
 9. Does it avoid checklist-label blocks?
 10. Does the ending leave the reader with reflection and confidence?
 
+Soft evidence guidance:
+- Use the research notes and reference quality labels as gentle guardrails.
+- Soften risky, overconfident, or locally uncertain statements.
+- Do not demand a source for every sentence.
+- Do not add inline citations, reference lists, or academic evidence language.
+- Preserve the farmer-scientist conversation and lived-in magazine voice.
+
 Target magazine: {target_magazine}
 Language: Gujarati
 Length: {article_length}
@@ -946,6 +1036,19 @@ Research priorities:
 - Scientific understanding that can emerge gradually after observation
 - Practical meaning for farmers: observation, monitoring, natural enemies,
   timely decision-making, lower cost, crop health, quality, yield, and profit
+- Official advisories, agricultural university/KVK guidance, research sources,
+  and current web context where useful
+
+Build a deep research pack using several search angles before selecting the
+topic:
+- Current pest/mite, crop, weather, or field-scene relevance
+- Month, season, crop stage, and weather connection
+- Gujarat and South Gujarat field/orchard context
+- Visual clues that can carry the opening scene
+- Observations and questions that delay discovery naturally
+- Scientific explanation that can appear after curiosity is built
+- Natural enemies, IPM, monitoring, and practical meaning
+- Farmer benefit through observation, timely decisions, quality, yield, and profit
 
 Return:
 1. Best Gujarati article topic.
@@ -958,10 +1061,16 @@ Return:
 8. Practical meaning and farmer benefit.
 9. Cautions about uncertain claims, pesticide safety, and local verification.
 10. Source-backed notes for article writing.
+11. Reference quality notes. For important sources, label the source type as
+    official, university/KVK, government, research, news, or general web. Briefly
+    say what each source is useful for and where to use caution.
 
 Do not invent official outbreaks, advisories, pesticide doses, or local claims.
 When evidence is uncertain, say field verification with local agricultural
 university, KVK, or extension officers is needed.
+Do not make the research feel like a technical literature review. The references
+should quietly strengthen the scene, discovery, and practical meaning while the
+final article remains citation-free and magazine-like.
 """.strip()
 
 
@@ -1186,6 +1295,13 @@ Final checks to apply silently:
 9. Does it avoid bullet points, checklist labels, and technical-report style?
 10. Does the ending give reflection, understanding, and hope?
 
+Soft evidence guidance:
+- Use the research notes and reference quality labels as gentle guardrails.
+- Soften risky, overconfident, or locally uncertain statements.
+- Do not demand a source for every sentence.
+- Do not add inline citations, reference lists, or academic evidence language.
+- Preserve the field-discovery journey and reflective magazine voice.
+
 Target magazine: {target_magazine}
 Language: Gujarati
 Length: {article_length}
@@ -1397,7 +1513,7 @@ def main() -> None:
             "Swaminathan-inspired rewrite, final editor check, and Word download."
         )
 
-        if st.button("Find latest topics", type="primary", key="classic_find_topics"):
+        if st.button("Deep research and references", type="primary", key="classic_find_topics"):
             with st.spinner("Researching current and seasonally relevant topics..."):
                 prompt = topic_research_prompt(month, region, subject_area, crop_focus)
                 topics, sources = generate_text(
@@ -1422,7 +1538,7 @@ def main() -> None:
                 key="classic_selected_topic",
             )
 
-            if st.button("Write Gujarati article", key="classic_write_article"):
+            if st.button("Use this research to write article", key="classic_write_article"):
                 with st.spinner("Writing the Gujarati article draft..."):
                     prompt = article_prompt(
                         month,
@@ -1527,6 +1643,8 @@ def main() -> None:
                 key="classic_download_rewrite",
             )
 
+            st.caption("Soft evidence check included in editor pass.")
+
             if st.button(
                 "Final editor check and make magazine article",
                 type="primary",
@@ -1602,7 +1720,7 @@ def main() -> None:
             )
 
         if st.button(
-            "Research topic and references for Tab 2",
+            "Deep research and references for Tab 2",
             type="primary",
             key="story_research_button",
         ):
@@ -1642,7 +1760,7 @@ def main() -> None:
                 key="story_research_notes",
             )
 
-            if st.button("Write story + science Gujarati article", key="story_write_article"):
+            if st.button("Use this research to write story + science article", key="story_write_article"):
                 with st.spinner("Writing the article using the attached prompt style..."):
                     prompt = story_article_prompt(
                         month,
@@ -1755,6 +1873,8 @@ def main() -> None:
                 key="story_download_rewrite",
             )
 
+            st.caption("Soft evidence check included in editor pass.")
+
             if st.button(
                 "Final editor check for Tab 2 magazine article",
                 type="primary",
@@ -1852,7 +1972,7 @@ def main() -> None:
             )
 
         if st.button(
-            "Research topic and references for Tab 3",
+            "Deep research and references for Tab 3",
             type="primary",
             key="wisdom_research_button",
         ):
@@ -1896,7 +2016,7 @@ def main() -> None:
                 key="wisdom_research_notes",
             )
 
-            if st.button("Write farm wisdom Gujarati article", key="wisdom_write_article"):
+            if st.button("Use this research to write farm wisdom article", key="wisdom_write_article"):
                 with st.spinner("Writing the article using the observation-first master prompt..."):
                     prompt = farm_wisdom_article_prompt(
                         month,
@@ -2013,6 +2133,8 @@ def main() -> None:
                 key="wisdom_download_rewrite",
             )
 
+            st.caption("Soft evidence check included in editor pass.")
+
             if st.button(
                 "Final editor check for Tab 3 magazine article",
                 type="primary",
@@ -2112,7 +2234,7 @@ def main() -> None:
             )
 
         if st.button(
-            "Research topic and references for Tab 4",
+            "Deep research and references for Tab 4",
             type="primary",
             key="discovery_research_button",
         ):
@@ -2156,7 +2278,7 @@ def main() -> None:
                 key="discovery_research_notes",
             )
 
-            if st.button("Write field discovery Gujarati article", key="discovery_write_article"):
+            if st.button("Use this research to write field discovery article", key="discovery_write_article"):
                 with st.spinner("Writing the article using the field-discovery master prompt..."):
                     prompt = field_discovery_article_prompt(
                         month,
@@ -2272,6 +2394,8 @@ def main() -> None:
                 mime="text/plain",
                 key="discovery_download_rewrite",
             )
+
+            st.caption("Soft evidence check included in editor pass.")
 
             if st.button(
                 "Final editor check for Tab 4 magazine article",
