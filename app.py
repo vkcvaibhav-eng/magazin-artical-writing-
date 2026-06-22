@@ -1657,6 +1657,270 @@ checklist, editor notes, or comments.
 """.strip()
 
 
+def farmer_engagement_research_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    topic_hint: str,
+    season_context: str,
+    target_magazine: str,
+) -> str:
+    return f"""
+You are an agricultural research assistant for Gujarati farmer-oriented
+magazine articles.
+
+Research current, seasonally relevant farmer problems for a new article style:
+Farmer Hook + Field Story + Simple Science + Practical Benefit.
+
+Research assignment:
+- Target magazine: {target_magazine}
+- Month: {month}
+- Season/context: {season_context or month}
+- Region: {region}
+- Subject area: {subject_area}
+- Crop: {crop_focus or "No specific crop"}
+- Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{current_problem_research_guide(month, region)}
+
+Research priorities:
+- Problems farmers are visibly facing now in the selected Gujarat region
+- Field scenes that create recognition: "this is happening in my field"
+- Crop stage, weather, irrigation, soil, dust, pest symptoms, disease symptoms,
+  nutrient signs, natural enemies, farmer habits, and market/quality pressure
+- Simple science that can explain the hidden cause after curiosity is built
+- Practical action that links naturally to cost saving, yield, quality, market
+  value, reduced pesticide misuse, natural enemy protection, and crop health
+- Official, university/KVK, weather, market, research, news, and farmer-trend
+  signals where useful
+
+Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+format above. Do not choose a final topic. Each topic must address a current
+farmer problem and must be suitable for a farmer-engaging magazine article.
+
+After TOPIC_OPTIONS, include a ranked evidence pack with field observations,
+farmer questions, hidden cause, simple science angle, practical benefit, source
+signal type, and caution notes for every topic.
+""".strip()
+
+
+def farmer_engagement_article_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    topic_hint: str,
+    season_context: str,
+    target_magazine: str,
+    research_notes: str,
+) -> str:
+    return f"""
+Write a Gujarati agricultural magazine article in the farmer-engagement style:
+Farmer Hook + Field Story + Simple Science + Practical Benefit.
+
+Target magazine: {target_magazine}
+Target magazine personality:
+{magazine_style_note(target_magazine)}
+
+Author background:
+Agricultural Entomology / Agricultural Acarology scientist with field experience
+in Gujarat. Do not imitate any named author exactly. Use an original Gujarati
+agricultural voice.
+
+Core purpose:
+The farmer should feel: "This is about my own field." The article should help
+farmers recognize the problem, become curious, understand the cause, trust the
+science, remember the advice, and feel confident to act.
+
+Style blend:
+- 25 percent farmer story: real farmer situation, field visit, village
+  experience, crop observation, or seasonal challenge.
+- 20 percent field observation: weather, crop stage, leaf colour, soil, dust,
+  irrigation, pest symptoms, farmer habit, and natural enemies.
+- 20 percent simple science: explain the cause in simple Gujarati only after
+  field observation and farmer doubt.
+- 25 percent practical solution: useful actions in natural prose, not bulletin
+  orders, with farmer benefit attached to every recommendation.
+- 10 percent hopeful reflection: end with wisdom, confidence, and practical hope.
+
+Hidden article architecture:
+Farmer hook -> field scene -> visible problem -> farmer question -> hidden cause
+-> simple scientific explanation -> practical field wisdom -> step-by-step
+advisory in natural prose -> farmer benefit -> reflective hopeful ending.
+Do not print these as labels.
+
+Opening rule:
+The first 200 words must not begin with a definition, scientific name,
+statistics, research result, pesticide recommendation, economic threshold, or
+technical explanation. Begin with a farmer walking in the field, a grower
+noticing a crop change, a seasonal problem, field visit, orchard observation,
+common farmer doubt, or visual symptom.
+
+Reader recognition and curiosity:
+- Include sentences that make farmers feel recognition: many farmers see this,
+  at first it looks ordinary, this scene is familiar in the field, but a closer
+  look shows something different.
+- Use natural questions, but do not answer immediately. Add one more observation
+  before explaining the science.
+
+Science placement:
+Science must not come first. Use this order: field observation, farmer doubt,
+hidden cause, simple science. Explain technical terms immediately in simple
+farmer language.
+
+Recommendation style:
+Do not write as orders. Avoid harsh command tone. Write as farmer wisdom.
+Every recommendation must naturally answer what to do, why to do it, and how the
+farmer benefits through cost saving, yield, quality, market value, reduced
+unnecessary pesticide use, natural enemy protection, long-term crop health, or
+better decisions.
+
+Paragraph style:
+Each paragraph should have one central idea and normally 70 to 120 words. Use
+mixed sentence rhythm: short for attention, medium for observation, longer for
+explanation, short for impact.
+
+Must avoid:
+Thesis style, literature review style, research paper style, excessive English,
+too many pesticide names, fear-based writing, political discussion, government
+scheme discussion, academic references, copied author voice, unsupported
+outbreak claims, and unsafe pesticide dosage.
+
+Special ending boxes:
+At the end, add two short reader-friendly boxes:
+1. ખેડૂત માટે 5 યાદ રાખવા જેવી વાતો
+2. આ ભૂલો ટાળો
+Keep both boxes short, practical, and easy to remember.
+
+Target details:
+- Language: Gujarati
+- Length: {article_length}
+- Month: {month}
+- Season/context: {season_context or month}
+- Region: {region}
+- Subject area: {subject_area}
+- Crop: {crop_focus or "No specific crop"}
+- Topic: {topic_hint or "Use the selected research topic"}
+
+Research notes:
+{research_notes}
+
+Return only the complete Gujarati article with a suitable Gujarati title.
+""".strip()
+
+
+def farmer_engagement_rewrite_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    topic_hint: str,
+    season_context: str,
+    target_magazine: str,
+    research_notes: str,
+    article: str,
+) -> str:
+    return f"""
+Rewrite the Gujarati article into a stronger farmer-engagement magazine article:
+Farmer Hook + Field Story + Simple Science + Practical Benefit.
+
+Keep the facts and selected topic, but improve:
+1. Farmer hook and first-paragraph recognition.
+2. Field scene, crop observation, weather/season details, and farmer doubt.
+3. Curiosity before science.
+4. Simple science after hidden cause.
+5. Practical advice written as farmer wisdom, not bulletin orders.
+6. Every recommendation linked to farmer benefit.
+7. Conversational but scientific Gujarati.
+8. Pesticide and outbreak safety.
+9. Two short ending boxes: "ખેડૂત માટે 5 યાદ રાખવા જેવી વાતો" and "આ ભૂલો ટાળો".
+10. Reflective hopeful ending.
+
+Avoid thesis style, literature review style, report-like ending, fear-based
+writing, unsafe pesticide dosage, unsupported local claims, and copied author
+voice.
+
+Target magazine: {target_magazine}
+Target magazine personality:
+{magazine_style_note(target_magazine)}
+Language: Gujarati
+Length: {article_length}
+Month: {month}
+Season/context: {season_context or month}
+Region: {region}
+Subject area: {subject_area}
+Crop: {crop_focus or "No specific crop"}
+Topic: {topic_hint or "Use the selected research topic"}
+
+Research notes:
+{research_notes}
+
+Draft article:
+{article}
+
+Return only the rewritten Gujarati article with a suitable Gujarati title.
+""".strip()
+
+
+def farmer_engagement_final_editor_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    topic_hint: str,
+    season_context: str,
+    target_magazine: str,
+    research_notes: str,
+    article: str,
+) -> str:
+    return f"""
+Act as the final Gujarati magazine editor for {target_magazine}.
+
+Finalize the article into a polished farmer-engagement magazine article:
+Farmer Hook + Field Story + Simple Science + Practical Benefit.
+
+Final checks to apply silently:
+1. Does the article start with a farmer situation, not science?
+2. Does the first paragraph create recognition?
+3. Is curiosity created before explanation?
+4. Is science simple and useful?
+5. Is the tone conversational but still scientific?
+6. Does every recommendation show farmer benefit?
+7. Are pesticide claims safe and cautious?
+8. Does it feel suitable for Gujarati farmer magazines such as Krushi Jivan,
+   Krushi Go-Vidya, Krushi Vigyan, or long-form farmer magazines?
+9. Would a farmer enjoy reading it fully?
+10. Does it end with practical wisdom?
+11. Are the two boxes present and short:
+    "ખેડૂત માટે 5 યાદ રાખવા જેવી વાતો" and "આ ભૂલો ટાળો"?
+
+Target magazine: {target_magazine}
+Target magazine personality:
+{magazine_style_note(target_magazine)}
+Language: Gujarati
+Length: {article_length}
+Month: {month}
+Season/context: {season_context or month}
+Region: {region}
+Subject area: {subject_area}
+Crop: {crop_focus or "No specific crop"}
+Topic: {topic_hint or "Use the selected research topic"}
+
+Research notes:
+{research_notes}
+
+Article to finalize:
+{article}
+
+Return only the final magazine-ready Gujarati article. Do not include score,
+checklist, editor notes, or comments.
+""".strip()
+
+
 def markdown_to_docx_blocks(text: str) -> list[tuple[str, str]]:
     blocks = []
     pending = []
@@ -2031,12 +2295,13 @@ def main() -> None:
     article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=1)
 
     client = build_client(api_keys[PROVIDER_GEMINI])
-    tab_classic, tab_story, tab_farm_wisdom, tab_field_discovery = st.tabs(
+    tab_classic, tab_story, tab_farm_wisdom, tab_field_discovery, tab_farmer_engagement = st.tabs(
         [
             "Tab 1: Swaminathan Workflow",
             "Tab 2: Story + Science Prompt",
             "Tab 3: Farm Wisdom Prompt",
             "Tab 4: Field Discovery Prompt",
+            "Tab 5: Farmer Engagement Prompt",
         ]
     )
 
@@ -3106,6 +3371,306 @@ def main() -> None:
                     file_name="agri_field_discovery_final.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     key="discovery_download_final_docx",
+                )
+
+    with tab_farmer_engagement:
+        st.subheader("Farmer Engagement Prompt Workflow")
+        st.write(
+            "This tab uses the new farmer-engagement style: farmer hook, field story, "
+            "simple science, practical benefit, memory boxes, and hopeful reflection."
+        )
+
+        engagement_magazine_options = [
+            "Krushi Jivan",
+            "Krushi Go-Vidya",
+            "Krushi Vigyan",
+            "Gujarati farmer magazine",
+            "Gujarati long-form agricultural magazine",
+        ]
+
+        engagement_col1, engagement_col2 = st.columns(2)
+        with engagement_col1:
+            engagement_topic_hint = st.text_input(
+                "Topic optional for Tab 5",
+                placeholder="Example: mites after dry wind, thrips in chilli, fruit quality after rain",
+                key="engagement_topic_hint",
+            )
+        with engagement_col2:
+            engagement_crop_focus = st.text_input(
+                "Crop for Tab 5",
+                value=crop_focus,
+                placeholder="Example: mango, chilli, cotton, okra, vegetables",
+                key="engagement_crop_focus",
+            )
+
+        engagement_col3, engagement_col4 = st.columns(2)
+        with engagement_col3:
+            engagement_season_context = st.text_input(
+                "Season or field context for Tab 5",
+                value=month,
+                placeholder="Example: early monsoon, dry spell, humid post-rain weather",
+                key="engagement_season_context",
+            )
+        with engagement_col4:
+            engagement_target_magazine = st.selectbox(
+                "Initial target magazine for Tab 5 research",
+                engagement_magazine_options,
+                index=2,
+                key="engagement_target_magazine",
+            )
+
+        if st.button(
+            "Deep research and references for Tab 5",
+            type="primary",
+            key="engagement_research_button",
+        ):
+            with st.spinner("Researching farmer-engaging current problems and references..."):
+                prompt = farmer_engagement_research_prompt(
+                    month,
+                    region,
+                    subject_area,
+                    engagement_crop_focus,
+                    engagement_topic_hint,
+                    engagement_season_context,
+                    engagement_target_magazine,
+                )
+                research, sources = generate_text(
+                    client,
+                    research_model,
+                    prompt,
+                    use_search=research_provider == PROVIDER_GEMINI,
+                    temperature=0.35,
+                    provider=research_provider,
+                    api_keys=api_keys,
+                )
+                st.session_state["engagement_research"] = research
+                st.session_state["engagement_sources"] = sources
+                st.session_state["engagement_saved_topic_hint"] = engagement_topic_hint
+                st.session_state["engagement_saved_crop_focus"] = engagement_crop_focus
+                st.session_state["engagement_saved_season_context"] = engagement_season_context
+                st.session_state["engagement_saved_target_magazine"] = engagement_target_magazine
+                st.session_state.pop("engagement_topic_choice", None)
+                st.session_state.pop("engagement_article_target_magazine", None)
+                st.session_state.pop("engagement_article", None)
+                st.session_state.pop("engagement_rewritten_article", None)
+                st.session_state.pop("engagement_final_article", None)
+                st.session_state.pop("engagement_review", None)
+
+        if "engagement_research" in st.session_state:
+            st.subheader("Tab 5 research notes")
+            st.markdown(st.session_state["engagement_research"])
+            render_sources("Tab 5 research sources", st.session_state.get("engagement_sources", []))
+
+            engagement_selected_topic = suggested_topic_selector(
+                "Select one current farmer-problem topic for Tab 5",
+                "engagement_topic_choice",
+                st.session_state["engagement_research"],
+            )
+            engagement_research_notes = st.text_area(
+                "Selected research notes for Tab 5",
+                value=st.session_state["engagement_research"],
+                height=300,
+                key="engagement_research_notes",
+            )
+            engagement_article_target_magazine = target_magazine_selector(
+                "engagement_article_target_magazine",
+                engagement_selected_topic,
+                subject_area,
+                engagement_research_notes,
+                st.session_state.get("engagement_saved_target_magazine", engagement_target_magazine),
+                engagement_magazine_options,
+            )
+
+            if st.button(
+                "Use this research to write farmer-engagement article",
+                key="engagement_write_article",
+            ):
+                if not engagement_selected_topic.strip():
+                    st.warning("Please select one suggested Tab 5 topic before writing.")
+                elif not engagement_article_target_magazine:
+                    st.warning("Please select the target magazine personality before writing.")
+                else:
+                    engagement_selected_context = selected_topic_context(
+                        engagement_selected_topic,
+                        engagement_research_notes,
+                    )
+                    with st.spinner("Writing the farmer-engagement article..."):
+                        prompt = farmer_engagement_article_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            st.session_state.get("engagement_saved_crop_focus", engagement_crop_focus),
+                            article_length,
+                            engagement_selected_topic,
+                            st.session_state.get("engagement_saved_season_context", engagement_season_context),
+                            engagement_article_target_magazine,
+                            engagement_selected_context,
+                        )
+                        article, sources = generate_text(
+                            client,
+                            model,
+                            prompt,
+                            use_search=use_search_for_article,
+                            temperature=temperature,
+                        )
+                        st.session_state["engagement_article"] = article
+                        st.session_state["engagement_article_sources"] = sources
+                        st.session_state["engagement_selected_topic"] = engagement_selected_topic
+                        st.session_state["engagement_selected_target_magazine"] = engagement_article_target_magazine
+                        st.session_state["engagement_research_notes_saved"] = engagement_selected_context
+                        st.session_state.pop("engagement_rewritten_article", None)
+                        st.session_state.pop("engagement_final_article", None)
+                        st.session_state.pop("engagement_review", None)
+
+        if "engagement_article" in st.session_state:
+            st.subheader("Tab 5 Step 1: Farmer-engagement draft")
+            engagement_draft = st.text_area(
+                "Tab 5 draft article",
+                value=st.session_state["engagement_article"],
+                height=440,
+                key="engagement_draft_article",
+            )
+            st.session_state["engagement_article"] = engagement_draft
+            render_sources(
+                "Tab 5 article grounding sources",
+                st.session_state.get("engagement_article_sources", []),
+            )
+
+            st.download_button(
+                "Download Tab 5 draft as TXT",
+                data=engagement_draft,
+                file_name="agri_farmer_engagement_draft.txt",
+                mime="text/plain",
+                key="engagement_download_draft",
+            )
+
+            engagement_review_col, engagement_rewrite_col = st.columns(2)
+            with engagement_review_col:
+                engagement_review_clicked = st.button(
+                    "Review Tab 5 draft quality",
+                    key="engagement_review_draft",
+                )
+            with engagement_rewrite_col:
+                engagement_rewrite_clicked = st.button(
+                    "Rewrite with farmer-engagement style",
+                    key="engagement_rewrite_button",
+                )
+
+            if engagement_review_clicked:
+                with st.spinner("Reviewing Tab 5 article quality..."):
+                    review, _ = generate_text(
+                        client,
+                        review_model,
+                        review_prompt(
+                            engagement_draft,
+                            st.session_state.get("engagement_selected_target_magazine", "Krushi Vigyan"),
+                        ),
+                        use_search=False,
+                        temperature=0.25,
+                        provider=review_provider,
+                        api_keys=api_keys,
+                    )
+                    st.session_state["engagement_review"] = review
+
+            if engagement_rewrite_clicked:
+                with st.spinner("Rewriting with the farmer-engagement master prompt..."):
+                    rewrite, _ = generate_text(
+                        client,
+                        model,
+                        farmer_engagement_rewrite_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            st.session_state.get("engagement_saved_crop_focus", engagement_crop_focus),
+                            article_length,
+                            st.session_state.get("engagement_selected_topic", ""),
+                            st.session_state.get("engagement_saved_season_context", engagement_season_context),
+                            st.session_state.get("engagement_selected_target_magazine", "Krushi Vigyan"),
+                            st.session_state.get("engagement_research_notes_saved", ""),
+                            engagement_draft,
+                        ),
+                        use_search=False,
+                        temperature=0.45,
+                    )
+                    st.session_state["engagement_rewritten_article"] = rewrite
+                    st.session_state.pop("engagement_final_article", None)
+
+        if "engagement_review" in st.session_state:
+            st.subheader("Tab 5 article review")
+            st.markdown(st.session_state["engagement_review"])
+
+        if "engagement_rewritten_article" in st.session_state:
+            st.subheader("Tab 5 Step 2: Farmer-engagement rewrite")
+            engagement_rewrite = st.text_area(
+                "Tab 5 improved article",
+                value=st.session_state["engagement_rewritten_article"],
+                height=480,
+                key="engagement_rewritten_text",
+            )
+            st.session_state["engagement_rewritten_article"] = engagement_rewrite
+
+            st.download_button(
+                "Download Tab 5 rewritten article as TXT",
+                data=engagement_rewrite,
+                file_name="agri_farmer_engagement_rewrite.txt",
+                mime="text/plain",
+                key="engagement_download_rewrite",
+            )
+
+            st.caption("Soft evidence check included in editor pass.")
+
+            if st.button(
+                "Final editor check for Tab 5 magazine article",
+                type="primary",
+                key="engagement_final_editor_button",
+            ):
+                with st.spinner("Final editor is polishing the Tab 5 article..."):
+                    final_article, _ = generate_text(
+                        client,
+                        model,
+                        farmer_engagement_final_editor_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            st.session_state.get("engagement_saved_crop_focus", engagement_crop_focus),
+                            article_length,
+                            st.session_state.get("engagement_selected_topic", ""),
+                            st.session_state.get("engagement_saved_season_context", engagement_season_context),
+                            st.session_state.get("engagement_selected_target_magazine", "Krushi Vigyan"),
+                            st.session_state.get("engagement_research_notes_saved", ""),
+                            engagement_rewrite,
+                        ),
+                        use_search=False,
+                        temperature=0.3,
+                    )
+                    st.session_state["engagement_final_article"] = final_article
+
+        if "engagement_final_article" in st.session_state:
+            st.subheader("Tab 5 Step 3: Final magazine-ready article")
+            engagement_final = st.text_area(
+                "Tab 5 final article for magazine",
+                value=st.session_state["engagement_final_article"],
+                height=540,
+                key="engagement_final_text",
+            )
+            st.session_state["engagement_final_article"] = engagement_final
+
+            engagement_txt_col, engagement_docx_col = st.columns(2)
+            with engagement_txt_col:
+                st.download_button(
+                    "Download Tab 5 final article as TXT",
+                    data=engagement_final,
+                    file_name="agri_farmer_engagement_final.txt",
+                    mime="text/plain",
+                    key="engagement_download_final_txt",
+                )
+            with engagement_docx_col:
+                st.download_button(
+                    "Download Tab 5 final article as Word DOCX",
+                    data=make_docx(engagement_final),
+                    file_name="agri_farmer_engagement_final.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key="engagement_download_final_docx",
                 )
 
 
