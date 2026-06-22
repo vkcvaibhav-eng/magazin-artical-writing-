@@ -65,14 +65,6 @@ MAGAZINE_OPTIONS = [
     "Gujarati long-form agricultural magazine",
 ]
 
-FIELD_DISCOVERY_MAGAZINE_OPTIONS = [
-    "Gujarati long-form agricultural magazine",
-    "Krushi Vigyan",
-    "Krushi Go-Vidya",
-    "Krushi Jivan",
-    "Gujarati farmer magazine",
-]
-
 MAGAZINE_STYLE_NOTES = {
     "Krishi Jagran Gujarati": (
         "Digital Gujarati agriculture news/explainer style. Use a strong clickable "
@@ -1013,7 +1005,12 @@ Research assignment:
 - Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
 
 Tab 4 magazine requirement:
-- Do not frame this as Agro Sandesh.
+- The selected target magazine is only a publication/personality reference.
+- If the selected target is Agro Sandesh, do not use generic Agro Sandesh house
+  style; use the full field-discovery magazine feature style below.
+- If the selected target is Krushi Prabhat, do not use daily newspaper style.
+- If the selected target is Krishi Jagran Gujarati, do not use fast digital
+  news/explainer style.
 - Do not use daily newspaper, short news, alert, or breaking-news style.
 - Research should support a full Gujarati magazine feature with scene,
   observation, discovery, reflection, farmer meaning, and practical depth.
@@ -1387,7 +1384,12 @@ Write a Gujarati agricultural magazine feature using an original field-discovery
 voice inspired by careful observation of farm life and seasons.
 
 Tab 4 magazine requirement:
-- Do not write in Agro Sandesh house style.
+- The selected target magazine is only a publication/personality reference.
+- If the selected target is Agro Sandesh, do not use generic Agro Sandesh house
+  style; use the full field-discovery magazine feature style below.
+- If the selected target is Krushi Prabhat, do not use daily newspaper style.
+- If the selected target is Krishi Jagran Gujarati, do not use fast digital
+  news/explainer style.
 - Do not write like a daily newspaper, news alert, short advisory, or digital
   news explainer.
 - Write a full magazine article/feature with narrative depth, scene, observation,
@@ -1517,7 +1519,11 @@ Rewrite the following Gujarati article into a stronger scene-based field
 discovery feature for a Gujarati agricultural magazine.
 
 Tab 4 magazine requirement:
-- Remove any Agro Sandesh-style generic extension tone.
+- The selected target magazine is only a publication/personality reference.
+- If the selected target is Agro Sandesh, remove generic Agro Sandesh house style.
+- If the selected target is Krushi Prabhat, remove daily newspaper style.
+- If the selected target is Krishi Jagran Gujarati, remove fast digital
+  news/explainer style.
 - Remove daily newspaper, short news, alert, or report-like structure.
 - Make it a full magazine feature with narrative flow, observation, discovery,
   simple science, farmer meaning, and reflective ending.
@@ -1587,9 +1593,15 @@ Act as the final Gujarati magazine editor for {target_magazine}.
 Finalize the article below into a polished field-discovery agricultural feature.
 
 Tab 4 magazine requirement:
-- Final article must not read like Agro Sandesh.
-- Final article must not read like a daily newspaper, short news report, alert,
-  or fast digital explainer.
+- The selected target magazine is only a publication/personality reference.
+- If the selected target is Agro Sandesh, final article must not read like
+  generic Agro Sandesh house style.
+- If the selected target is Krushi Prabhat, final article must not read like a
+  daily newspaper.
+- If the selected target is Krishi Jagran Gujarati, final article must not read
+  like a fast digital news/explainer.
+- Final article must not read like a short news report, alert, or fast digital
+  explainer.
 - Final article must feel like a complete Gujarati magazine feature.
 
 Final editorial standard:
@@ -2841,7 +2853,7 @@ def main() -> None:
         with discovery_col4:
             discovery_target_magazine = st.selectbox(
                 "Initial target magazine for Tab 4 research",
-                FIELD_DISCOVERY_MAGAZINE_OPTIONS,
+                MAGAZINE_OPTIONS,
                 index=0,
                 key="discovery_target_magazine",
             )
@@ -2905,7 +2917,6 @@ def main() -> None:
                 subject_area,
                 discovery_research_notes,
                 st.session_state.get("discovery_saved_target_magazine", discovery_target_magazine),
-                FIELD_DISCOVERY_MAGAZINE_OPTIONS,
             )
 
             if st.button("Use this research to write field discovery article", key="discovery_write_article"):
