@@ -5,6 +5,7 @@ from datetime import datetime
 from html import escape
 from io import BytesIO
 
+import requests
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
@@ -49,6 +50,69 @@ ARTICLE_LENGTHS = [
     "1500 words",
 ]
 
+MAGAZINE_OPTIONS = [
+    "Krushi Vigyan",
+    "Krushi Go-Vidya",
+    "Krushi Jivan",
+    "Krishi Jagran Gujarati",
+    "Krushi Prabhat",
+    "Agro Sandesh",
+    "Gujarati farmer magazine",
+    "Gujarati long-form agricultural magazine",
+]
+
+MAGAZINE_STYLE_NOTES = {
+    "Krishi Jagran Gujarati": (
+        "Digital Gujarati agriculture news/explainer style. Use a strong clickable "
+        "title, short intro, current relevance, simple explanation, practical "
+        "farmer benefit, 4-6 subheadings, and an active timely tone. Avoid thesis "
+        "style and slow academic introductions."
+    ),
+    "Krushi Go-Vidya": (
+        "University extension advisory style. Keep the tone scientific, trustworthy, "
+        "and farmer-useful. Include crop-stage relevance, symptoms or observations, "
+        "simple scientific reason, locally applicable recommendations, precautions, "
+        "and local university/KVK verification where useful."
+    ),
+    "Krushi Jivan": (
+        "Scientist-to-farmer Gujarati monthly magazine style. Explain latest research, "
+        "new technology, nutrient management, plant protection, soil, water, dairy, "
+        "or broad farmer education in a balanced, credible, non-promotional voice."
+    ),
+    "Krushi Prabhat": (
+        "Daily agriculture newspaper style. Keep the article shorter, timely, direct, "
+        "and news-oriented. Start with the main point, then farmer relevance, "
+        "region/crop connection, and immediate practical advisory. Avoid long background."
+    ),
+    "Krushi Vigyan": (
+        "Practical field-solution Gujarati magazine style. Begin with a field problem, "
+        "explain the cause, give crop-stage-wise practical solutions, include farmer "
+        "benefit, and keep the tone scientific but directly useful."
+    ),
+    "Agro Sandesh": (
+        "Farmer-centric Gujarati agriculture magazine style with practical extension "
+        "guidance, simple science, local relevance, and a hopeful field-oriented voice."
+    ),
+    "Gujarati farmer magazine": (
+        "General Gujarati farmer magazine style. Keep it simple, practical, field-based, "
+        "and useful for farmers, extension workers, agriculture students, and growers."
+    ),
+    "Gujarati long-form agricultural magazine": (
+        "Long-form Gujarati agricultural feature style. Use scene, observation, simple "
+        "science, practical meaning, and polished magazine flow."
+    ),
+}
+
+PROVIDER_GEMINI = "Gemini"
+PROVIDER_PERPLEXITY = "Perplexity"
+PROVIDER_OPENAI = "OpenAI"
+
+PROVIDER_KEY_ENV = {
+    PROVIDER_GEMINI: "GEMINI_API_KEY",
+    PROVIDER_PERPLEXITY: "PERPLEXITY_API_KEY",
+    PROVIDER_OPENAI: "OPENAI_API_KEY",
+}
+
 
 st.set_page_config(
     page_title="Agro Sandesh Article Writer",
@@ -57,15 +121,33 @@ st.set_page_config(
 )
 
 
-def get_api_key() -> str:
-    env_key = os.getenv("GEMINI_API_KEY", "").strip()
-    entered_key = st.sidebar.text_input(
-        "Gemini API key",
-        value=env_key,
-        type="password",
-        help="Use GEMINI_API_KEY in .env locally, or add it in Streamlit secrets/settings when hosted.",
-    ).strip()
-    return entered_key or env_key
+def config_value(name: str, default: str = "") -> str:
+    env_value = os.getenv(name, "").strip()
+    if env_value:
+        return env_value
+
+    try:
+        secret_value = st.secrets.get(name, "")
+    except Exception:
+        secret_value = ""
+
+    return str(secret_value or default).strip()
+
+
+def get_api_keys() -> dict[str, str]:
+    return {
+        PROVIDER_GEMINI: config_value("GEMINI_API_KEY"),
+        PROVIDER_PERPLEXITY: config_value("PERPLEXITY_API_KEY"),
+        PROVIDER_OPENAI: config_value("OPENAI_API_KEY"),
+    }
+
+
+def missing_api_keys(selected_providers: list[str], api_keys: dict[str, str]) -> list[str]:
+    missing = []
+    for provider in [PROVIDER_GEMINI, PROVIDER_PERPLEXITY, PROVIDER_OPENAI]:
+        if provider in selected_providers and not api_keys.get(provider):
+            missing.append(f"{provider} ({PROVIDER_KEY_ENV[provider]})")
+    return missing
 
 
 def build_client(api_key: str) -> genai.Client:
@@ -105,7 +187,50 @@ def extract_grounding_sources(response) -> list[dict[str, str]]:
     return sources
 
 
-def generate_text(
+def extract_perplexity_sources(data: dict) -> list[dict[str, str]]:
+    sources = []
+    seen = set()
+
+    for result in data.get("search_results") or []:
+        uri = result.get("url") or ""
+        title = result.get("title") or uri or "Source"
+        if uri and uri not in seen:
+            seen.add(uri)
+            sources.append({"title": title, "uri": uri})
+
+    for uri in data.get("citations") or []:
+        if uri and uri not in seen:
+            seen.add(uri)
+            sources.append({"title": uri, "uri": uri})
+
+    return sources
+
+
+def extract_openai_text(data: dict) -> str:
+    if data.get("output_text"):
+        return data["output_text"]
+
+    text_parts = []
+    for item in data.get("output") or []:
+        for content in item.get("content") or []:
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                text_parts.append(content["text"])
+    return "\n".join(text_parts)
+
+
+def raise_for_api_error(response: requests.Response, provider: str) -> None:
+    if response.ok:
+        return
+
+    try:
+        detail = response.json()
+    except ValueError:
+        detail = response.text
+
+    raise RuntimeError(f"{provider} API error {response.status_code}: {detail}")
+
+
+def generate_gemini_text(
     client: genai.Client,
     model: str,
     prompt: str,
@@ -130,6 +255,101 @@ def generate_text(
     return response.text or "", extract_grounding_sources(response)
 
 
+def generate_perplexity_text(
+    api_key: str,
+    model: str,
+    prompt: str,
+    *,
+    temperature: float,
+):
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+    }
+    if "reasoning" in model:
+        payload["reasoning_effort"] = "medium"
+
+    response = requests.post(
+        "https://api.perplexity.ai/v1/sonar",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=180,
+    )
+    raise_for_api_error(response, PROVIDER_PERPLEXITY)
+    data = response.json()
+    text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return text, extract_perplexity_sources(data)
+
+
+def generate_openai_text(
+    api_key: str,
+    model: str,
+    prompt: str,
+    *,
+    temperature: float,
+):
+    payload = {
+        "model": model,
+        "input": prompt,
+        "temperature": temperature,
+    }
+
+    response = requests.post(
+        "https://api.openai.com/v1/responses",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=180,
+    )
+    raise_for_api_error(response, PROVIDER_OPENAI)
+    return extract_openai_text(response.json()), []
+
+
+def generate_text(
+    client: genai.Client,
+    model: str,
+    prompt: str,
+    *,
+    use_search: bool,
+    temperature: float,
+    provider: str = PROVIDER_GEMINI,
+    api_keys: dict[str, str] = None,
+):
+    if provider == PROVIDER_GEMINI:
+        return generate_gemini_text(
+            client,
+            model,
+            prompt,
+            use_search=use_search,
+            temperature=temperature,
+        )
+
+    api_keys = api_keys or {}
+    if provider == PROVIDER_PERPLEXITY:
+        return generate_perplexity_text(
+            api_keys.get(PROVIDER_PERPLEXITY, ""),
+            model,
+            prompt,
+            temperature=temperature,
+        )
+
+    if provider == PROVIDER_OPENAI:
+        return generate_openai_text(
+            api_keys.get(PROVIDER_OPENAI, ""),
+            model,
+            prompt,
+            temperature=temperature,
+        )
+
+    raise ValueError(f"Unsupported AI provider: {provider}")
+
+
 def topic_research_prompt(
     month: str,
     region: str,
@@ -137,7 +357,7 @@ def topic_research_prompt(
     crop_focus: str,
 ) -> str:
     return f"""
-You are an agricultural research assistant for Agro Sandesh magazine.
+You are an agricultural research assistant for Gujarati agriculture magazines.
 
 Use Google Search grounding to identify current, prevailing, and seasonally relevant
 agriculture article topics for {month} in {region}.
@@ -176,7 +396,9 @@ Return 10 topic options. For each option include:
 5. Farmer benefit
 6. Suitability score out of 10
 
-Then select the single best topic and provide a rich research dossier:
+Do not select the final topic automatically. The user will manually choose which
+topic to write. After the 10 topic options, provide a useful research note pack
+for each option so the user can compare and choose:
 - Why now
 - Regional/crop relevance
 - Field observations
@@ -193,6 +415,8 @@ uncertain, say so and suggest field verification with local agricultural univers
 KVK, or extension officers.
 Do not write like a research paper. The research notes are for article support;
 do not suggest inline citations or an academic reference section for the article.
+Do not write a final recommendation such as "best topic", "selected topic", or
+"write this topic"; keep the choice open for the user.
 """.strip()
 
 
@@ -202,10 +426,14 @@ def article_prompt(
     subject_area: str,
     crop_focus: str,
     article_length: str,
+    target_magazine: str,
     selected_topic: str,
 ) -> str:
     return f"""
-Write a full Gujarati agricultural extension article for Agro Sandesh.
+Write a full Gujarati agricultural extension article for {target_magazine}.
+
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 
 Important authorship instruction:
 - Do not claim that Dr. M. S. Swaminathan wrote the article.
@@ -255,7 +483,7 @@ Soft evidence guidance:
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve farmer usefulness, magazine rhythm, and natural Gujarati prose.
 
-Target publication: Agro Sandesh
+Target publication: {target_magazine}
 Language: Gujarati
 Length: {article_length}
 Region: {region}
@@ -270,9 +498,12 @@ Write the complete article with a suitable Gujarati title.
 """.strip()
 
 
-def review_prompt(article: str) -> str:
+def review_prompt(article: str, target_magazine: str = "selected Gujarati agriculture magazine") -> str:
     return f"""
-Review the following Gujarati agriculture article for Agro Sandesh.
+Review the following Gujarati agriculture article for {target_magazine}.
+
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 
 Check:
 1. Is the opening farmer-oriented?
@@ -301,12 +532,16 @@ def rewrite_prompt(
     subject_area: str,
     crop_focus: str,
     article_length: str,
+    target_magazine: str,
     selected_topic: str,
     article: str,
 ) -> str:
     return f"""
 Rewrite the following Gujarati agriculture article into a stronger magazine-quality
-Agro Sandesh article.
+article for {target_magazine}.
+
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 
 Important authorship instruction:
 - Do not claim that Dr. M. S. Swaminathan wrote the article.
@@ -336,7 +571,7 @@ Rewrite goals:
 10. Do not use bold or italic marker labels inside the article. Use only natural
     Gujarati magazine prose with occasional reader-friendly subheadings.
 
-Target publication: Agro Sandesh
+Target publication: {target_magazine}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -361,11 +596,15 @@ def final_editor_prompt(
     subject_area: str,
     crop_focus: str,
     article_length: str,
+    target_magazine: str,
     selected_topic: str,
     article: str,
 ) -> str:
     return f"""
-Act as the final Gujarati magazine editor for Agro Sandesh.
+Act as the final Gujarati magazine editor for {target_magazine}.
+
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 
 Final editorial standard:
 - Do not claim that Dr. M. S. Swaminathan wrote the article.
@@ -399,7 +638,7 @@ Soft evidence guidance:
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve farmer usefulness, magazine rhythm, and natural Gujarati prose.
 
-Target publication: Agro Sandesh
+Target publication: {target_magazine}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -426,7 +665,7 @@ def story_research_prompt(
     topic_hint: str,
 ) -> str:
     return f"""
-You are a senior agricultural research assistant for Agro Sandesh magazine.
+You are a senior agricultural research assistant for Gujarati agriculture magazines.
 
 Use Google Search grounding to research a current, seasonally relevant Gujarati
 agriculture article topic. The final article will use a human-centered field
@@ -438,7 +677,7 @@ Research assignment:
 - Region: {region}
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
-- Topic hint: {topic_hint or "Find the best current topic"}
+- Topic hint: {topic_hint or "Find current candidate topics; user will choose manually"}
 
 Research priorities:
 - Current and prevailing crop problems
@@ -453,8 +692,8 @@ Research priorities:
 - Practical value for farmers, extension workers, agriculture students, rural
   youth, and farm advisors
 
-Build a deep research pack using several search angles before selecting the
-topic:
+Build a deep research pack using several search angles before presenting topic
+options:
 - Current pest/mite or crop problem relevance
 - Month, weather, and crop-stage connection
 - Gujarat and South Gujarat field context
@@ -463,8 +702,9 @@ topic:
 - Natural enemies, IPM, monitoring, and practical decision support
 - Farmer benefit: yield, quality, cost reduction, sustainability, and profit
 
-Return:
-1. Best Gujarati article topic.
+Return 5 to 8 Gujarati article topic options. Do not choose a final topic.
+For each option include:
+1. Gujarati article topic.
 2. Why this topic is relevant now.
 3. Region and crop relevance.
 4. Field observations farmers may recognize.
@@ -484,6 +724,8 @@ university, KVK, or extension officers is needed.
 Do not make the research feel like a literature review. The references should
 strengthen the story and practical guidance while keeping the final article
 magazine-like and citation-free.
+Do not write a final recommendation such as "best topic", "selected topic", or
+"write this topic"; keep the choice open for the user.
 """.strip()
 
 
@@ -493,11 +735,15 @@ def story_article_prompt(
     subject_area: str,
     crop_focus: str,
     article_length: str,
+    target_magazine: str,
     topic_hint: str,
     research_notes: str,
 ) -> str:
     return f"""
-Write a Gujarati Agro Sandesh article using the following editorial blend:
+Write a Gujarati {target_magazine} article using the following editorial blend:
+
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 
 - 20 percent human-centered rural storytelling: real field situations, farmer
   observations, simple vivid descriptions, and a curiosity-building opening.
@@ -511,14 +757,14 @@ Write a Gujarati Agro Sandesh article using the following editorial blend:
 
 Important authorship instruction:
 - Do not claim that Dr. M. S. Swaminathan or any journalist wrote the article.
-- Use an original Gujarati voice suitable for Agro Sandesh.
+- Use an original Gujarati voice suitable for {target_magazine}.
 
 Target audience:
 Farmers, progressive growers, extension workers, agriculture students, rural
 youth, and farm advisors.
 
 Article requirements:
-- Target publication: Agro Sandesh
+- Target publication: {target_magazine}
 - Language: Gujarati
 - Length: {article_length}
 - Region: {region}
@@ -578,13 +824,17 @@ def story_rewrite_prompt(
     subject_area: str,
     crop_focus: str,
     article_length: str,
+    target_magazine: str,
     topic_hint: str,
     research_notes: str,
     article: str,
 ) -> str:
     return f"""
-Rewrite the following Gujarati article into a stronger Agro Sandesh magazine
+Rewrite the following Gujarati article into a stronger {target_magazine} magazine
 article using the story + science + extension workflow.
+
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 
 Keep the same facts and topic, but improve:
 1. Human-centered field opening.
@@ -607,7 +857,7 @@ Remove:
 - Direct "main reason/effect/result/solution" label headings.
 - Unsupported outbreak claims, official advisories, and unsafe pesticide doses.
 
-Target publication: Agro Sandesh
+Target publication: {target_magazine}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -632,12 +882,16 @@ def story_final_editor_prompt(
     subject_area: str,
     crop_focus: str,
     article_length: str,
+    target_magazine: str,
     topic_hint: str,
     research_notes: str,
     article: str,
 ) -> str:
     return f"""
-Act as the final Gujarati magazine editor for Agro Sandesh.
+Act as the final Gujarati magazine editor for {target_magazine}.
+
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 
 Finalize the article below using the attached story + science + extension
 standard:
@@ -668,7 +922,7 @@ Soft evidence guidance:
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve storytelling, farmer usefulness, and magazine rhythm.
 
-Target publication: Agro Sandesh
+Target publication: {target_magazine}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -711,7 +965,7 @@ Research assignment:
 - Region: {region}
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
-- Topic hint: {topic_hint or "Find the best current topic"}
+- Topic hint: {topic_hint or "Find current candidate topics; user will choose manually"}
 
 Research priorities:
 - Current and prevailing crop, pest, mite, weather, or field observation issues
@@ -727,8 +981,8 @@ Research priorities:
 - Farmer benefit through better observation, lower cost, better decisions,
   crop health, yield, quality, and profitability
 
-Build a deep research pack using several search angles before selecting the
-topic:
+Build a deep research pack using several search angles before presenting topic
+options:
 - Current pest/mite, crop, weather, or field-observation relevance
 - Month, season, crop stage, and weather connection
 - Gujarat and South Gujarat farming reality
@@ -737,8 +991,9 @@ topic:
 - Natural enemies, IPM, patient monitoring, and practical wisdom
 - Farmer benefit through better observation and wiser decisions
 
-Return:
-1. Best Gujarati article topic.
+Return 5 to 8 Gujarati article topic options. Do not choose a final topic.
+For each option include:
+1. Gujarati article topic.
 2. Why this topic is relevant for the selected season/month.
 3. Region and crop relevance.
 4. Field/orchard/village observations that can open the article.
@@ -757,6 +1012,8 @@ university, KVK, or extension officers is needed.
 Do not make the research feel like an academic review. The references should
 quietly support a thoughtful farmer-scientist conversation, not turn the article
 into a cited report.
+Do not write a final recommendation such as "best topic", "selected topic", or
+"write this topic"; keep the choice open for the user.
 """.strip()
 
 
@@ -796,6 +1053,7 @@ through storytelling, observation, reflection, and simple explanation.
 
 Article requirements:
 - Target magazine: {target_magazine}
+- Target magazine personality: {magazine_style_note(target_magazine)}
 - Language: Gujarati
 - Length: {article_length}
 - Month: {month}
@@ -911,6 +1169,8 @@ Rewrite goals:
 9. Avoid unsupported outbreak claims, official advisories, and pesticide doses.
 
 Target magazine: {target_magazine}
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -977,6 +1237,8 @@ Soft evidence guidance:
 - Preserve the farmer-scientist conversation and lived-in magazine voice.
 
 Target magazine: {target_magazine}
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -1022,7 +1284,7 @@ Research assignment:
 - Region: {region}
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
-- Topic hint: {topic_hint or "Find the best current topic"}
+- Topic hint: {topic_hint or "Find current candidate topics; user will choose manually"}
 
 Research priorities:
 - Current crop, pest, mite, weather, field, orchard, or seasonal observation
@@ -1039,8 +1301,8 @@ Research priorities:
 - Official advisories, agricultural university/KVK guidance, research sources,
   and current web context where useful
 
-Build a deep research pack using several search angles before selecting the
-topic:
+Build a deep research pack using several search angles before presenting topic
+options:
 - Current pest/mite, crop, weather, or field-scene relevance
 - Month, season, crop stage, and weather connection
 - Gujarat and South Gujarat field/orchard context
@@ -1050,8 +1312,9 @@ topic:
 - Natural enemies, IPM, monitoring, and practical meaning
 - Farmer benefit through observation, timely decisions, quality, yield, and profit
 
-Return:
-1. Best Gujarati article topic.
+Return 5 to 8 Gujarati article topic options. Do not choose a final topic.
+For each option include:
+1. Gujarati article topic.
 2. Why this topic is relevant for the selected season/month.
 3. Region and crop relevance.
 4. Scene details that can open the article.
@@ -1071,6 +1334,8 @@ university, KVK, or extension officers is needed.
 Do not make the research feel like a technical literature review. The references
 should quietly strengthen the scene, discovery, and practical meaning while the
 final article remains citation-free and magazine-like.
+Do not write a final recommendation such as "best topic", "selected topic", or
+"write this topic"; keep the choice open for the user.
 """.strip()
 
 
@@ -1112,6 +1377,7 @@ between weather, crops, pests, and people.
 
 Article requirements:
 - Target magazine: {target_magazine}
+- Target magazine personality: {magazine_style_note(target_magazine)}
 - Language: Gujarati
 - Length: {article_length}
 - Month: {month}
@@ -1236,6 +1502,8 @@ Rewrite goals:
 10. End with reflection and renewed appreciation for careful observation.
 
 Target magazine: {target_magazine}
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -1303,6 +1571,8 @@ Soft evidence guidance:
 - Preserve the field-discovery journey and reflective magazine voice.
 
 Target magazine: {target_magazine}
+Target magazine personality:
+{magazine_style_note(target_magazine)}
 Language: Gujarati
 Length: {article_length}
 Month: {month}
@@ -1457,26 +1727,165 @@ def render_sources(title: str, sources: list[dict[str, str]]) -> None:
             st.markdown(f"{index}. [{source['title']}]({source['uri']})")
 
 
+def selected_topic_context(topic: str, research_notes: str) -> str:
+    topic = (topic or "").strip()
+    research_notes = (research_notes or "").strip()
+    if research_notes:
+        return f"Manually selected topic:\n{topic}\n\nResearch notes:\n{research_notes}"
+    return f"Manually selected topic:\n{topic}"
+
+
+def magazine_style_note(target_magazine: str) -> str:
+    return MAGAZINE_STYLE_NOTES.get(
+        target_magazine,
+        MAGAZINE_STYLE_NOTES["Gujarati farmer magazine"],
+    )
+
+
+def has_any(text: str, keywords: list[str]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
+def recommend_target_magazine(
+    topic: str,
+    subject_area: str = "",
+    research_notes: str = "",
+    fallback: str = "Krushi Vigyan",
+) -> str:
+    text = " ".join([topic or "", subject_area or "", research_notes or ""]).lower()
+    scores = {magazine: 0 for magazine in MAGAZINE_OPTIONS}
+    scores[fallback if fallback in scores else "Krushi Vigyan"] += 1
+
+    if has_any(text, ["mite", "acarology", "ipm", "pest", "disease", "thrips", "whitefly", "nematode", "mealybug", "fruit fly", "crop protection"]):
+        scores["Krushi Vigyan"] += 5
+        scores["Krushi Go-Vidya"] += 3
+        scores["Krushi Jivan"] += 2
+
+    if has_any(text, ["university", "kvk", "recommendation", "advisory", "agromet", "crop stage", "extension", "natural farming", "training"]):
+        scores["Krushi Go-Vidya"] += 5
+
+    if has_any(text, ["fertilizer", "nutrient", "nutrition", "soil", "micronutrient", "water soluble", "research", "technology", "dairy", "animal husbandry", "water recharge", "farm forestry"]):
+        scores["Krushi Jivan"] += 5
+
+    if has_any(text, ["news", "scheme", "yojana", "market", "commodity", "success story", "progressive farmer", "iot", "drone", "machinery", "explainer", "current"]):
+        scores["Krishi Jagran Gujarati"] += 5
+
+    if has_any(text, ["today", "daily", "mandi", "price", "rainfall", "rain", "weather update", "subsidy", "local event", "alert", "urgent"]):
+        scores["Krushi Prabhat"] += 5
+        scores["Krishi Jagran Gujarati"] += 2
+
+    ranking = [
+        "Krushi Vigyan",
+        "Krushi Go-Vidya",
+        "Krushi Jivan",
+        "Krishi Jagran Gujarati",
+        "Krushi Prabhat",
+        "Agro Sandesh",
+        "Gujarati farmer magazine",
+        "Gujarati long-form agricultural magazine",
+    ]
+    return max(ranking, key=lambda magazine: scores.get(magazine, 0))
+
+
+def target_magazine_selector(
+    key: str,
+    topic: str,
+    subject_area: str,
+    research_notes: str,
+    fallback: str = "Krushi Vigyan",
+):
+    if not topic.strip():
+        st.caption("Type your selected topic to get a target magazine suggestion.")
+        return None
+
+    suggested_magazine = recommend_target_magazine(
+        topic,
+        subject_area,
+        research_notes,
+        fallback,
+    )
+    st.caption(
+        f"Suggested target magazine: {suggested_magazine}. "
+        f"{magazine_style_note(suggested_magazine)}"
+    )
+    suggestion_key = f"{key}_suggested"
+    current_magazine = st.session_state.get(key)
+    previous_suggestion = st.session_state.get(suggestion_key)
+    if current_magazine is None or current_magazine == previous_suggestion:
+        st.session_state[key] = suggested_magazine
+    st.session_state[suggestion_key] = suggested_magazine
+
+    current_index = MAGAZINE_OPTIONS.index(
+        st.session_state.get(key, suggested_magazine)
+        if st.session_state.get(key, suggested_magazine) in MAGAZINE_OPTIONS
+        else suggested_magazine
+    )
+    return st.selectbox(
+        "Target magazine personality",
+        MAGAZINE_OPTIONS,
+        index=current_index,
+        key=key,
+    )
+
+
 def main() -> None:
     st.title("Agro Sandesh Gujarati Agriculture Article Writer")
     st.caption(
-        "Research current Gujarat agriculture topics with Gemini Google Search grounding, "
-        "then draft, rewrite, and finalize farmer-centric Gujarati articles."
+        "Multi-AI workflow: Perplexity for research, Gemini for Gujarati drafting, "
+        "and OpenAI for strict quality review."
     )
 
-    api_key = get_api_key()
-
     with st.sidebar:
-        st.header("Settings")
-        model = st.text_input("Gemini model", value="gemini-3.5-flash")
+        api_keys = get_api_keys()
+
+        st.header("AI routing")
+        st.caption("API keys are loaded from Streamlit secrets or environment variables.")
+        research_provider = st.selectbox(
+            "Deep research provider",
+            [PROVIDER_PERPLEXITY, PROVIDER_GEMINI],
+            index=0,
+        )
+        research_model = st.text_input(
+            "Research model",
+            value=(
+                config_value("PERPLEXITY_MODEL", "sonar-reasoning-pro")
+                if research_provider == PROVIDER_PERPLEXITY
+                else config_value("GEMINI_RESEARCH_MODEL", "gemini-3.5-flash")
+            ),
+        )
+        article_model = st.text_input(
+            "Gemini article model",
+            value=config_value("GEMINI_ARTICLE_MODEL", "gemini-3.5-flash"),
+        )
+        review_provider = st.selectbox(
+            "Quality review provider",
+            [PROVIDER_OPENAI, PROVIDER_GEMINI],
+            index=0,
+        )
+        review_model = st.text_input(
+            "Review model",
+            value=(
+                config_value("OPENAI_REVIEW_MODEL", "gpt-4o")
+                if review_provider == PROVIDER_OPENAI
+                else article_model
+            ),
+        )
+
+        st.header("Writing settings")
+        model = article_model
         temperature = st.slider("Creativity", 0.1, 1.0, 0.7, 0.1)
         use_search_for_article = st.checkbox(
             "Use Google Search while writing article",
             value=True,
         )
 
-    if not api_key:
-        st.warning("Enter your Gemini API key in the sidebar to continue.")
+    selected_providers = [PROVIDER_GEMINI, research_provider, review_provider]
+    missing_keys = missing_api_keys(selected_providers, api_keys)
+    if missing_keys:
+        st.warning(
+            "Add these API keys to Streamlit secrets/settings or environment variables: "
+            + ", ".join(missing_keys)
+        )
         st.stop()
 
     col1, col2 = st.columns(2)
@@ -1496,7 +1905,7 @@ def main() -> None:
     )
     article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=1)
 
-    client = build_client(api_key)
+    client = build_client(api_keys[PROVIDER_GEMINI])
     tab_classic, tab_story, tab_farm_wisdom, tab_field_discovery = st.tabs(
         [
             "Tab 1: Swaminathan Workflow",
@@ -1518,49 +1927,76 @@ def main() -> None:
                 prompt = topic_research_prompt(month, region, subject_area, crop_focus)
                 topics, sources = generate_text(
                     client,
-                    model,
+                    research_model,
                     prompt,
-                    use_search=True,
+                    use_search=research_provider == PROVIDER_GEMINI,
                     temperature=0.45,
+                    provider=research_provider,
+                    api_keys=api_keys,
                 )
                 st.session_state["topics"] = topics
                 st.session_state["topic_sources"] = sources
+                st.session_state.pop("classic_manual_topic", None)
+                st.session_state.pop("classic_target_magazine", None)
 
         if "topics" in st.session_state:
             st.subheader("Suggested topics")
             st.markdown(st.session_state["topics"])
             render_sources("Research sources", st.session_state.get("topic_sources", []))
 
-            selected_topic = st.text_area(
-                "Selected topic and notes",
+            selected_topic_title = st.text_input(
+                "Manually selected topic for writing",
+                placeholder="Type or paste the Gujarati topic you want to write.",
+                key="classic_manual_topic",
+            )
+            selected_topic_notes = st.text_area(
+                "Research notes to use for the selected topic",
                 value=st.session_state["topics"],
                 height=260,
-                key="classic_selected_topic",
+                key="classic_selected_topic_notes",
+            )
+            selected_target_magazine = target_magazine_selector(
+                "classic_target_magazine",
+                selected_topic_title,
+                subject_area,
+                selected_topic_notes,
+                "Krushi Vigyan",
             )
 
             if st.button("Use this research to write article", key="classic_write_article"):
-                with st.spinner("Writing the Gujarati article draft..."):
-                    prompt = article_prompt(
-                        month,
-                        region,
-                        subject_area,
-                        crop_focus,
-                        article_length,
-                        selected_topic,
+                if not selected_topic_title.strip():
+                    st.warning("Please manually select or type one topic before writing.")
+                elif not selected_target_magazine:
+                    st.warning("Please select the target magazine personality before writing.")
+                else:
+                    selected_topic = selected_topic_context(
+                        selected_topic_title,
+                        selected_topic_notes,
                     )
-                    article, sources = generate_text(
-                        client,
-                        model,
-                        prompt,
-                        use_search=use_search_for_article,
-                        temperature=temperature,
-                    )
-                    st.session_state["article"] = article
-                    st.session_state["article_sources"] = sources
-                    st.session_state["selected_topic"] = selected_topic
-                    st.session_state.pop("rewritten_article", None)
-                    st.session_state.pop("final_article", None)
-                    st.session_state.pop("review", None)
+                    with st.spinner("Writing the Gujarati article draft..."):
+                        prompt = article_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            crop_focus,
+                            article_length,
+                            selected_target_magazine,
+                            selected_topic,
+                        )
+                        article, sources = generate_text(
+                            client,
+                            model,
+                            prompt,
+                            use_search=use_search_for_article,
+                            temperature=temperature,
+                        )
+                        st.session_state["article"] = article
+                        st.session_state["article_sources"] = sources
+                        st.session_state["selected_topic"] = selected_topic
+                        st.session_state["selected_target_magazine"] = selected_target_magazine
+                        st.session_state.pop("rewritten_article", None)
+                        st.session_state.pop("final_article", None)
+                        st.session_state.pop("review", None)
 
         if "article" in st.session_state:
             st.subheader("Step 1: Gujarati article draft")
@@ -1594,10 +2030,15 @@ def main() -> None:
                 with st.spinner("Reviewing article quality..."):
                     review, _ = generate_text(
                         client,
-                        model,
-                        review_prompt(draft_article),
+                        review_model,
+                        review_prompt(
+                            draft_article,
+                            st.session_state.get("selected_target_magazine", "Agro Sandesh"),
+                        ),
                         use_search=False,
                         temperature=0.25,
+                        provider=review_provider,
+                        api_keys=api_keys,
                     )
                     st.session_state["review"] = review
 
@@ -1612,6 +2053,7 @@ def main() -> None:
                             subject_area,
                             crop_focus,
                             article_length,
+                            st.session_state.get("selected_target_magazine", "Agro Sandesh"),
                             st.session_state.get("selected_topic", ""),
                             draft_article,
                         ),
@@ -1660,6 +2102,7 @@ def main() -> None:
                             subject_area,
                             crop_focus,
                             article_length,
+                            st.session_state.get("selected_target_magazine", "Agro Sandesh"),
                             st.session_state.get("selected_topic", ""),
                             rewritten_article,
                         ),
@@ -1734,15 +2177,19 @@ def main() -> None:
                 )
                 research, sources = generate_text(
                     client,
-                    model,
+                    research_model,
                     prompt,
-                    use_search=True,
+                    use_search=research_provider == PROVIDER_GEMINI,
                     temperature=0.35,
+                    provider=research_provider,
+                    api_keys=api_keys,
                 )
                 st.session_state["story_research"] = research
                 st.session_state["story_sources"] = sources
                 st.session_state["story_saved_topic_hint"] = story_topic_hint
                 st.session_state["story_saved_crop_focus"] = story_crop_focus
+                st.session_state.pop("story_manual_topic", None)
+                st.session_state.pop("story_target_magazine", None)
                 st.session_state.pop("story_article", None)
                 st.session_state.pop("story_rewritten_article", None)
                 st.session_state.pop("story_final_article", None)
@@ -1753,37 +2200,61 @@ def main() -> None:
             st.markdown(st.session_state["story_research"])
             render_sources("Tab 2 research sources", st.session_state.get("story_sources", []))
 
+            story_selected_topic = st.text_input(
+                "Manually selected topic for Tab 2",
+                placeholder="Type or paste the topic you choose from the research options.",
+                key="story_manual_topic",
+            )
             story_research_notes = st.text_area(
                 "Selected research notes for Tab 2",
                 value=st.session_state["story_research"],
                 height=300,
                 key="story_research_notes",
             )
+            story_target_magazine = target_magazine_selector(
+                "story_target_magazine",
+                story_selected_topic,
+                subject_area,
+                story_research_notes,
+                "Krushi Vigyan",
+            )
 
             if st.button("Use this research to write story + science article", key="story_write_article"):
-                with st.spinner("Writing the article using the attached prompt style..."):
-                    prompt = story_article_prompt(
-                        month,
-                        region,
-                        subject_area,
-                        st.session_state.get("story_saved_crop_focus", story_crop_focus),
-                        article_length,
-                        st.session_state.get("story_saved_topic_hint", story_topic_hint),
+                if not story_selected_topic.strip():
+                    st.warning("Please manually select or type one Tab 2 topic before writing.")
+                elif not story_target_magazine:
+                    st.warning("Please select the target magazine personality before writing.")
+                else:
+                    story_selected_context = selected_topic_context(
+                        story_selected_topic,
                         story_research_notes,
                     )
-                    article, sources = generate_text(
-                        client,
-                        model,
-                        prompt,
-                        use_search=use_search_for_article,
-                        temperature=temperature,
-                    )
-                    st.session_state["story_article"] = article
-                    st.session_state["story_article_sources"] = sources
-                    st.session_state["story_research_notes_saved"] = story_research_notes
-                    st.session_state.pop("story_rewritten_article", None)
-                    st.session_state.pop("story_final_article", None)
-                    st.session_state.pop("story_review", None)
+                    with st.spinner("Writing the article using the attached prompt style..."):
+                        prompt = story_article_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            st.session_state.get("story_saved_crop_focus", story_crop_focus),
+                            article_length,
+                            story_target_magazine,
+                            story_selected_topic,
+                            story_selected_context,
+                        )
+                        article, sources = generate_text(
+                            client,
+                            model,
+                            prompt,
+                            use_search=use_search_for_article,
+                            temperature=temperature,
+                        )
+                        st.session_state["story_article"] = article
+                        st.session_state["story_article_sources"] = sources
+                        st.session_state["story_selected_topic"] = story_selected_topic
+                        st.session_state["story_selected_target_magazine"] = story_target_magazine
+                        st.session_state["story_research_notes_saved"] = story_selected_context
+                        st.session_state.pop("story_rewritten_article", None)
+                        st.session_state.pop("story_final_article", None)
+                        st.session_state.pop("story_review", None)
 
         if "story_article" in st.session_state:
             st.subheader("Tab 2 Step 1: Story + science draft")
@@ -1823,10 +2294,15 @@ def main() -> None:
                 with st.spinner("Reviewing Tab 2 article quality..."):
                     review, _ = generate_text(
                         client,
-                        model,
-                        review_prompt(story_draft),
+                        review_model,
+                        review_prompt(
+                            story_draft,
+                            st.session_state.get("story_selected_target_magazine", "Agro Sandesh"),
+                        ),
                         use_search=False,
                         temperature=0.25,
+                        provider=review_provider,
+                        api_keys=api_keys,
                     )
                     st.session_state["story_review"] = review
 
@@ -1841,7 +2317,8 @@ def main() -> None:
                             subject_area,
                             st.session_state.get("story_saved_crop_focus", story_crop_focus),
                             article_length,
-                            st.session_state.get("story_saved_topic_hint", story_topic_hint),
+                            st.session_state.get("story_selected_target_magazine", "Agro Sandesh"),
+                            st.session_state.get("story_selected_topic", ""),
                             st.session_state.get("story_research_notes_saved", ""),
                             story_draft,
                         ),
@@ -1890,7 +2367,8 @@ def main() -> None:
                             subject_area,
                             st.session_state.get("story_saved_crop_focus", story_crop_focus),
                             article_length,
-                            st.session_state.get("story_saved_topic_hint", story_topic_hint),
+                            st.session_state.get("story_selected_target_magazine", "Agro Sandesh"),
+                            st.session_state.get("story_selected_topic", ""),
                             st.session_state.get("story_research_notes_saved", ""),
                             story_rewrite,
                         ),
@@ -1960,14 +2438,9 @@ def main() -> None:
             )
         with wisdom_col4:
             wisdom_target_magazine = st.selectbox(
-                "Target magazine for Tab 3",
-                [
-                    "Krushi Jeevan",
-                    "Krushi Go-Vidya",
-                    "Krushi Vishva",
-                    "Agro Sandesh",
-                    "Gujarati farmer magazine",
-                ],
+                "Initial target magazine for Tab 3 research",
+                MAGAZINE_OPTIONS,
+                index=0,
                 key="wisdom_target_magazine",
             )
 
@@ -1988,10 +2461,12 @@ def main() -> None:
                 )
                 research, sources = generate_text(
                     client,
-                    model,
+                    research_model,
                     prompt,
-                    use_search=True,
+                    use_search=research_provider == PROVIDER_GEMINI,
                     temperature=0.35,
+                    provider=research_provider,
+                    api_keys=api_keys,
                 )
                 st.session_state["wisdom_research"] = research
                 st.session_state["wisdom_sources"] = sources
@@ -1999,6 +2474,8 @@ def main() -> None:
                 st.session_state["wisdom_saved_crop_focus"] = wisdom_crop_focus
                 st.session_state["wisdom_saved_season_context"] = wisdom_season_context
                 st.session_state["wisdom_saved_target_magazine"] = wisdom_target_magazine
+                st.session_state.pop("wisdom_manual_topic", None)
+                st.session_state.pop("wisdom_article_target_magazine", None)
                 st.session_state.pop("wisdom_article", None)
                 st.session_state.pop("wisdom_rewritten_article", None)
                 st.session_state.pop("wisdom_final_article", None)
@@ -2009,39 +2486,62 @@ def main() -> None:
             st.markdown(st.session_state["wisdom_research"])
             render_sources("Tab 3 research sources", st.session_state.get("wisdom_sources", []))
 
+            wisdom_selected_topic = st.text_input(
+                "Manually selected topic for Tab 3",
+                placeholder="Type or paste the topic you choose from the research options.",
+                key="wisdom_manual_topic",
+            )
             wisdom_research_notes = st.text_area(
                 "Selected research notes for Tab 3",
                 value=st.session_state["wisdom_research"],
                 height=300,
                 key="wisdom_research_notes",
             )
+            wisdom_article_target_magazine = target_magazine_selector(
+                "wisdom_article_target_magazine",
+                wisdom_selected_topic,
+                subject_area,
+                wisdom_research_notes,
+                st.session_state.get("wisdom_saved_target_magazine", wisdom_target_magazine),
+            )
 
             if st.button("Use this research to write farm wisdom article", key="wisdom_write_article"):
-                with st.spinner("Writing the article using the observation-first master prompt..."):
-                    prompt = farm_wisdom_article_prompt(
-                        month,
-                        region,
-                        subject_area,
-                        st.session_state.get("wisdom_saved_crop_focus", wisdom_crop_focus),
-                        article_length,
-                        st.session_state.get("wisdom_saved_topic_hint", wisdom_topic_hint),
-                        st.session_state.get("wisdom_saved_season_context", wisdom_season_context),
-                        st.session_state.get("wisdom_saved_target_magazine", wisdom_target_magazine),
+                if not wisdom_selected_topic.strip():
+                    st.warning("Please manually select or type one Tab 3 topic before writing.")
+                elif not wisdom_article_target_magazine:
+                    st.warning("Please select the target magazine personality before writing.")
+                else:
+                    wisdom_selected_context = selected_topic_context(
+                        wisdom_selected_topic,
                         wisdom_research_notes,
                     )
-                    article, sources = generate_text(
-                        client,
-                        model,
-                        prompt,
-                        use_search=use_search_for_article,
-                        temperature=temperature,
-                    )
-                    st.session_state["wisdom_article"] = article
-                    st.session_state["wisdom_article_sources"] = sources
-                    st.session_state["wisdom_research_notes_saved"] = wisdom_research_notes
-                    st.session_state.pop("wisdom_rewritten_article", None)
-                    st.session_state.pop("wisdom_final_article", None)
-                    st.session_state.pop("wisdom_review", None)
+                    with st.spinner("Writing the article using the observation-first master prompt..."):
+                        prompt = farm_wisdom_article_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            st.session_state.get("wisdom_saved_crop_focus", wisdom_crop_focus),
+                            article_length,
+                            wisdom_selected_topic,
+                            st.session_state.get("wisdom_saved_season_context", wisdom_season_context),
+                            wisdom_article_target_magazine,
+                            wisdom_selected_context,
+                        )
+                        article, sources = generate_text(
+                            client,
+                            model,
+                            prompt,
+                            use_search=use_search_for_article,
+                            temperature=temperature,
+                        )
+                        st.session_state["wisdom_article"] = article
+                        st.session_state["wisdom_article_sources"] = sources
+                        st.session_state["wisdom_selected_topic"] = wisdom_selected_topic
+                        st.session_state["wisdom_selected_target_magazine"] = wisdom_article_target_magazine
+                        st.session_state["wisdom_research_notes_saved"] = wisdom_selected_context
+                        st.session_state.pop("wisdom_rewritten_article", None)
+                        st.session_state.pop("wisdom_final_article", None)
+                        st.session_state.pop("wisdom_review", None)
 
         if "wisdom_article" in st.session_state:
             st.subheader("Tab 3 Step 1: Farm wisdom draft")
@@ -2081,10 +2581,15 @@ def main() -> None:
                 with st.spinner("Reviewing Tab 3 article quality..."):
                     review, _ = generate_text(
                         client,
-                        model,
-                        review_prompt(wisdom_draft),
+                        review_model,
+                        review_prompt(
+                            wisdom_draft,
+                            st.session_state.get("wisdom_selected_target_magazine", "Krushi Vigyan"),
+                        ),
                         use_search=False,
                         temperature=0.25,
+                        provider=review_provider,
+                        api_keys=api_keys,
                     )
                     st.session_state["wisdom_review"] = review
 
@@ -2099,9 +2604,9 @@ def main() -> None:
                             subject_area,
                             st.session_state.get("wisdom_saved_crop_focus", wisdom_crop_focus),
                             article_length,
-                            st.session_state.get("wisdom_saved_topic_hint", wisdom_topic_hint),
+                            st.session_state.get("wisdom_selected_topic", ""),
                             st.session_state.get("wisdom_saved_season_context", wisdom_season_context),
-                            st.session_state.get("wisdom_saved_target_magazine", wisdom_target_magazine),
+                            st.session_state.get("wisdom_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("wisdom_research_notes_saved", ""),
                             wisdom_draft,
                         ),
@@ -2150,9 +2655,9 @@ def main() -> None:
                             subject_area,
                             st.session_state.get("wisdom_saved_crop_focus", wisdom_crop_focus),
                             article_length,
-                            st.session_state.get("wisdom_saved_topic_hint", wisdom_topic_hint),
+                            st.session_state.get("wisdom_selected_topic", ""),
                             st.session_state.get("wisdom_saved_season_context", wisdom_season_context),
-                            st.session_state.get("wisdom_saved_target_magazine", wisdom_target_magazine),
+                            st.session_state.get("wisdom_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("wisdom_research_notes_saved", ""),
                             wisdom_rewrite,
                         ),
@@ -2222,14 +2727,9 @@ def main() -> None:
             )
         with discovery_col4:
             discovery_target_magazine = st.selectbox(
-                "Target magazine for Tab 4",
-                [
-                    "Krushi Jeevan",
-                    "Krushi Go-Vidya",
-                    "Krushi Vishva",
-                    "Agro Sandesh",
-                    "Gujarati long-form agricultural magazine",
-                ],
+                "Initial target magazine for Tab 4 research",
+                MAGAZINE_OPTIONS,
+                index=0,
                 key="discovery_target_magazine",
             )
 
@@ -2250,10 +2750,12 @@ def main() -> None:
                 )
                 research, sources = generate_text(
                     client,
-                    model,
+                    research_model,
                     prompt,
-                    use_search=True,
+                    use_search=research_provider == PROVIDER_GEMINI,
                     temperature=0.35,
+                    provider=research_provider,
+                    api_keys=api_keys,
                 )
                 st.session_state["discovery_research"] = research
                 st.session_state["discovery_sources"] = sources
@@ -2261,6 +2763,8 @@ def main() -> None:
                 st.session_state["discovery_saved_crop_focus"] = discovery_crop_focus
                 st.session_state["discovery_saved_season_context"] = discovery_season_context
                 st.session_state["discovery_saved_target_magazine"] = discovery_target_magazine
+                st.session_state.pop("discovery_manual_topic", None)
+                st.session_state.pop("discovery_article_target_magazine", None)
                 st.session_state.pop("discovery_article", None)
                 st.session_state.pop("discovery_rewritten_article", None)
                 st.session_state.pop("discovery_final_article", None)
@@ -2271,39 +2775,62 @@ def main() -> None:
             st.markdown(st.session_state["discovery_research"])
             render_sources("Tab 4 research sources", st.session_state.get("discovery_sources", []))
 
+            discovery_selected_topic = st.text_input(
+                "Manually selected topic for Tab 4",
+                placeholder="Type or paste the topic you choose from the research options.",
+                key="discovery_manual_topic",
+            )
             discovery_research_notes = st.text_area(
                 "Selected research notes for Tab 4",
                 value=st.session_state["discovery_research"],
                 height=300,
                 key="discovery_research_notes",
             )
+            discovery_article_target_magazine = target_magazine_selector(
+                "discovery_article_target_magazine",
+                discovery_selected_topic,
+                subject_area,
+                discovery_research_notes,
+                st.session_state.get("discovery_saved_target_magazine", discovery_target_magazine),
+            )
 
             if st.button("Use this research to write field discovery article", key="discovery_write_article"):
-                with st.spinner("Writing the article using the field-discovery master prompt..."):
-                    prompt = field_discovery_article_prompt(
-                        month,
-                        region,
-                        subject_area,
-                        st.session_state.get("discovery_saved_crop_focus", discovery_crop_focus),
-                        article_length,
-                        st.session_state.get("discovery_saved_topic_hint", discovery_topic_hint),
-                        st.session_state.get("discovery_saved_season_context", discovery_season_context),
-                        st.session_state.get("discovery_saved_target_magazine", discovery_target_magazine),
+                if not discovery_selected_topic.strip():
+                    st.warning("Please manually select or type one Tab 4 topic before writing.")
+                elif not discovery_article_target_magazine:
+                    st.warning("Please select the target magazine personality before writing.")
+                else:
+                    discovery_selected_context = selected_topic_context(
+                        discovery_selected_topic,
                         discovery_research_notes,
                     )
-                    article, sources = generate_text(
-                        client,
-                        model,
-                        prompt,
-                        use_search=use_search_for_article,
-                        temperature=temperature,
-                    )
-                    st.session_state["discovery_article"] = article
-                    st.session_state["discovery_article_sources"] = sources
-                    st.session_state["discovery_research_notes_saved"] = discovery_research_notes
-                    st.session_state.pop("discovery_rewritten_article", None)
-                    st.session_state.pop("discovery_final_article", None)
-                    st.session_state.pop("discovery_review", None)
+                    with st.spinner("Writing the article using the field-discovery master prompt..."):
+                        prompt = field_discovery_article_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            st.session_state.get("discovery_saved_crop_focus", discovery_crop_focus),
+                            article_length,
+                            discovery_selected_topic,
+                            st.session_state.get("discovery_saved_season_context", discovery_season_context),
+                            discovery_article_target_magazine,
+                            discovery_selected_context,
+                        )
+                        article, sources = generate_text(
+                            client,
+                            model,
+                            prompt,
+                            use_search=use_search_for_article,
+                            temperature=temperature,
+                        )
+                        st.session_state["discovery_article"] = article
+                        st.session_state["discovery_article_sources"] = sources
+                        st.session_state["discovery_selected_topic"] = discovery_selected_topic
+                        st.session_state["discovery_selected_target_magazine"] = discovery_article_target_magazine
+                        st.session_state["discovery_research_notes_saved"] = discovery_selected_context
+                        st.session_state.pop("discovery_rewritten_article", None)
+                        st.session_state.pop("discovery_final_article", None)
+                        st.session_state.pop("discovery_review", None)
 
         if "discovery_article" in st.session_state:
             st.subheader("Tab 4 Step 1: Field discovery draft")
@@ -2343,10 +2870,15 @@ def main() -> None:
                 with st.spinner("Reviewing Tab 4 article quality..."):
                     review, _ = generate_text(
                         client,
-                        model,
-                        review_prompt(discovery_draft),
+                        review_model,
+                        review_prompt(
+                            discovery_draft,
+                            st.session_state.get("discovery_selected_target_magazine", "Krushi Vigyan"),
+                        ),
                         use_search=False,
                         temperature=0.25,
+                        provider=review_provider,
+                        api_keys=api_keys,
                     )
                     st.session_state["discovery_review"] = review
 
@@ -2361,9 +2893,9 @@ def main() -> None:
                             subject_area,
                             st.session_state.get("discovery_saved_crop_focus", discovery_crop_focus),
                             article_length,
-                            st.session_state.get("discovery_saved_topic_hint", discovery_topic_hint),
+                            st.session_state.get("discovery_selected_topic", ""),
                             st.session_state.get("discovery_saved_season_context", discovery_season_context),
-                            st.session_state.get("discovery_saved_target_magazine", discovery_target_magazine),
+                            st.session_state.get("discovery_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("discovery_research_notes_saved", ""),
                             discovery_draft,
                         ),
@@ -2412,9 +2944,9 @@ def main() -> None:
                             subject_area,
                             st.session_state.get("discovery_saved_crop_focus", discovery_crop_focus),
                             article_length,
-                            st.session_state.get("discovery_saved_topic_hint", discovery_topic_hint),
+                            st.session_state.get("discovery_selected_topic", ""),
                             st.session_state.get("discovery_saved_season_context", discovery_season_context),
-                            st.session_state.get("discovery_saved_target_magazine", discovery_target_magazine),
+                            st.session_state.get("discovery_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("discovery_research_notes_saved", ""),
                             discovery_rewrite,
                         ),
