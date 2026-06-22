@@ -30,8 +30,12 @@ MONTHS = [
 ]
 
 REGIONS = [
-    "South Gujarat",
     "Whole Gujarat",
+    "South Gujarat",
+    "Saurashtra",
+    "Central Gujarat (Middle Gujarat)",
+    "North Gujarat",
+    "Kutch (Kachchh)",
     "India with Gujarat relevance",
 ]
 
@@ -350,6 +354,51 @@ def generate_text(
     raise ValueError(f"Unsupported AI provider: {provider}")
 
 
+def current_problem_research_guide(month: str, region: str) -> str:
+    current_date = datetime.now().strftime("%d %B %Y")
+    return f"""
+Current-problem discovery rules:
+- Current date for research context: {current_date}.
+- Treat this as real farmer-problem discovery for {month}, not generic topic brainstorming.
+- Search current web context first: IMD/agromet advisories, Gujarat agricultural
+  university/KVK advisories, state agriculture advisories, recent agriculture news,
+  rainfall/monsoon updates, mandi/market/input reports, and credible farmer-facing
+  digital agriculture sources.
+- If using trends, social posts, YouTube, or local media signals, use them only as
+  weak signals and corroborate with official, university/KVK, weather, market, or
+  multiple news sources.
+- For "Whole Gujarat", compare South Gujarat, Saurashtra, Central/Middle Gujarat,
+  North Gujarat, and Kutch separately before ranking topics.
+- For a selected sub-region such as {region}, focus on that sub-region's crops,
+  districts, rainfall pattern, crop stage, pest/disease pressure, irrigation stress,
+  soil/salinity/wind/dust issues, market pressure, and farmer-visible symptoms.
+- Do not suggest random evergreen topics such as generic IPM, generic nutrient
+  management, or generic technology unless there is current regional evidence that
+  farmers are facing that problem now.
+- Prefer topics where a farmer can immediately say: "This is happening in my field
+  or village this month."
+- Rank topics by farmer urgency, evidence strength, regional specificity, seasonal
+  timing, magazine usefulness, and safety of recommendations.
+
+At the top of the response, include this exact structured section so the app can
+make topic selection easy:
+TOPIC_OPTIONS
+TOPIC 1 | Gujarati title | Region/sub-region | Main crop | Current farmer problem | Evidence confidence /10
+TOPIC 2 | Gujarati title | Region/sub-region | Main crop | Current farmer problem | Evidence confidence /10
+Continue for 8 to 10 topics.
+
+After TOPIC_OPTIONS, provide a ranked evidence pack. For every topic include:
+- Current farmer problem being addressed
+- Region/sub-region and important districts if known
+- Crop stage or seasonal timing
+- Field symptoms farmers may recognize
+- Why this is a current {month} problem, not a random topic
+- Source signal summary: official, university/KVK, government, weather, market,
+  news, farmer trend, or general web
+- Caution: what must be locally verified before publication
+""".strip()
+
+
 def topic_research_prompt(
     month: str,
     region: str,
@@ -365,8 +414,10 @@ agriculture article topics for {month} in {region}.
 Subject focus: {subject_area}
 Crop focus, if any: {crop_focus or "No specific crop focus"}
 
+{current_problem_research_guide(month, region)}
+
 Research priorities:
-- South Gujarat and Gujarat agriculture
+- Selected Gujarat region and sub-region-specific farmer problems
 - Agricultural acarology and agricultural entomology
 - Current pest and mite problems
 - Seasonal crop stage and month-wise agricultural activity
@@ -382,23 +433,19 @@ First create a deep research pack using multiple search angles:
 1. Current pest/mite relevance
 2. Crop stage and seasonal activity
 3. Month/weather connection
-4. Gujarat and South Gujarat relevance
+4. Selected Gujarat region and sub-region relevance
 5. Field observations farmers may recognize
 6. Scientific background in simple language
 7. Natural enemies and integrated management
 8. Farmer benefit and practical relevance
 
-Return 10 topic options. For each option include:
-1. Gujarati title
-2. English explanation
-3. Why it matters in {month}
-4. Region relevance
-5. Farmer benefit
-6. Suitability score out of 10
+Return 8 to 10 topic options using the required TOPIC_OPTIONS format above.
+For each topic, keep the Gujarati title specific to a real current farmer
+problem, crop, and Gujarat region/sub-region.
 
-Do not select the final topic automatically. The user will manually choose which
-topic to write. After the 10 topic options, provide a useful research note pack
-for each option so the user can compare and choose:
+Do not select the final article topic automatically. The user will choose from
+the ranked suggested topics in the app. After the topic options, provide a useful
+research note pack for each option so the user can compare and choose:
 - Why now
 - Regional/crop relevance
 - Field observations
@@ -677,12 +724,14 @@ Research assignment:
 - Region: {region}
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
-- Topic hint: {topic_hint or "Find current candidate topics; user will choose manually"}
+- Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{current_problem_research_guide(month, region)}
 
 Research priorities:
 - Current and prevailing crop problems
 - Agricultural acarology and agricultural entomology relevance
-- South Gujarat and Gujarat farming conditions
+- Selected Gujarat region and sub-region-specific farming conditions
 - Crop stage, weather influence, and seasonal activity
 - Farmer observations and field-level symptoms
 - Scientific reason behind the problem
@@ -696,27 +745,15 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite or crop problem relevance
 - Month, weather, and crop-stage connection
-- Gujarat and South Gujarat field context
+- Selected Gujarat region and sub-region field context
 - Farmer-recognizable observations for a story opening
 - Science that can be explained simply after the field situation
 - Natural enemies, IPM, monitoring, and practical decision support
 - Farmer benefit: yield, quality, cost reduction, sustainability, and profit
 
-Return 5 to 8 Gujarati article topic options. Do not choose a final topic.
-For each option include:
-1. Gujarati article topic.
-2. Why this topic is relevant now.
-3. Region and crop relevance.
-4. Field observations farmers may recognize.
-5. Simple scientific explanation.
-6. Practical management points.
-7. Farmer benefits: yield, quality, cost reduction, profitability, and
-   long-term crop health.
-8. Cautions: uncertain claims, pesticide safety, and need for local verification.
-9. Source-backed notes that can guide the article.
-10. Reference quality notes. For important sources, label the source type as
-    official, university/KVK, government, research, news, or general web. Briefly
-    say what each source is useful for and where to use caution.
+Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+format above. Do not choose a final topic. Each topic must be a real current
+farmer problem, not a general evergreen theme.
 
 Do not invent official outbreaks, advisories, pesticide doses, or local claims.
 When evidence is uncertain, say that field verification with local agricultural
@@ -965,12 +1002,14 @@ Research assignment:
 - Region: {region}
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
-- Topic hint: {topic_hint or "Find current candidate topics; user will choose manually"}
+- Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{current_problem_research_guide(month, region)}
 
 Research priorities:
 - Current and prevailing crop, pest, mite, weather, or field observation issues
 - Agricultural acarology and entomology relevance when useful
-- Gujarat and South Gujarat farming realities
+- Selected Gujarat region and sub-region farming realities
 - Seasonal field conditions, crop stage, weather, soil, dust, irrigation, and
   farmer habits
 - Practical observations farmers may recognize
@@ -985,26 +1024,15 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite, crop, weather, or field-observation relevance
 - Month, season, crop stage, and weather connection
-- Gujarat and South Gujarat farming reality
+- Selected Gujarat region and sub-region farming reality
 - Farm habits, orchard/field scenes, soil, dust, moisture, and natural balance
 - Scientific explanation that can emerge from observation
 - Natural enemies, IPM, patient monitoring, and practical wisdom
 - Farmer benefit through better observation and wiser decisions
 
-Return 5 to 8 Gujarati article topic options. Do not choose a final topic.
-For each option include:
-1. Gujarati article topic.
-2. Why this topic is relevant for the selected season/month.
-3. Region and crop relevance.
-4. Field/orchard/village observations that can open the article.
-5. Questions that can create curiosity for readers.
-6. Simple scientific explanation.
-7. Practical lessons and farmer benefits.
-8. Cautions about uncertain claims, pesticide safety, and local verification.
-9. Source-backed research notes for writing the article.
-10. Reference quality notes. For important sources, label the source type as
-    official, university/KVK, government, research, news, or general web. Briefly
-    say what each source is useful for and where to use caution.
+Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+format above. Do not choose a final topic. Each topic must be a real current
+farmer problem, not a general evergreen theme.
 
 Do not invent official outbreaks, advisories, pesticide doses, or local claims.
 When evidence is uncertain, say field verification with local agricultural
@@ -1284,13 +1312,15 @@ Research assignment:
 - Region: {region}
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
-- Topic hint: {topic_hint or "Find current candidate topics; user will choose manually"}
+- Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{current_problem_research_guide(month, region)}
 
 Research priorities:
 - Current crop, pest, mite, weather, field, orchard, or seasonal observation
   issues relevant to farmers
 - Agricultural acarology and entomology relevance when useful
-- Gujarat and South Gujarat farming conditions
+- Selected Gujarat region and sub-region farming conditions
 - Visual scene details: light, weather, crop appearance, leaf condition, dust,
   humidity, dry winds, seasonal transition, farmer activity, and field texture
 - Observations that can create curiosity before explanation
@@ -1305,28 +1335,16 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite, crop, weather, or field-scene relevance
 - Month, season, crop stage, and weather connection
-- Gujarat and South Gujarat field/orchard context
+- Selected Gujarat region and sub-region field/orchard context
 - Visual clues that can carry the opening scene
 - Observations and questions that delay discovery naturally
 - Scientific explanation that can appear after curiosity is built
 - Natural enemies, IPM, monitoring, and practical meaning
 - Farmer benefit through observation, timely decisions, quality, yield, and profit
 
-Return 5 to 8 Gujarati article topic options. Do not choose a final topic.
-For each option include:
-1. Gujarati article topic.
-2. Why this topic is relevant for the selected season/month.
-3. Region and crop relevance.
-4. Scene details that can open the article.
-5. Observations and curiosity-building questions.
-6. Clues that can lead to delayed discovery.
-7. Simple scientific explanation.
-8. Practical meaning and farmer benefit.
-9. Cautions about uncertain claims, pesticide safety, and local verification.
-10. Source-backed notes for article writing.
-11. Reference quality notes. For important sources, label the source type as
-    official, university/KVK, government, research, news, or general web. Briefly
-    say what each source is useful for and where to use caution.
+Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+format above. Do not choose a final topic. Each topic must be a real current
+farmer problem, not a general evergreen theme.
 
 Do not invent official outbreaks, advisories, pesticide doses, or local claims.
 When evidence is uncertain, say field verification with local agricultural
@@ -1731,8 +1749,62 @@ def selected_topic_context(topic: str, research_notes: str) -> str:
     topic = (topic or "").strip()
     research_notes = (research_notes or "").strip()
     if research_notes:
-        return f"Manually selected topic:\n{topic}\n\nResearch notes:\n{research_notes}"
-    return f"Manually selected topic:\n{topic}"
+        return f"Selected suggested topic:\n{topic}\n\nResearch notes:\n{research_notes}"
+    return f"Selected suggested topic:\n{topic}"
+
+
+def clean_topic_option(option: str) -> str:
+    option = re.sub(r"[*_`#]+", "", option or "").strip()
+    option = re.sub(r"\s+", " ", option)
+    return option.strip(" -|:")
+
+
+def extract_suggested_topics(research_notes: str) -> list[str]:
+    topics = []
+    seen = set()
+
+    for raw_line in (research_notes or "").splitlines():
+        line = clean_topic_option(raw_line)
+        if not line:
+            continue
+
+        match = re.match(r"^TOPIC\s*\d+\s*(?:[:|\-–—]\s*)?(.*)$", line, re.IGNORECASE)
+        if match:
+            candidate = clean_topic_option(match.group(1))
+        else:
+            title_match = re.search(
+                r"(?:Gujarati title|Gujarati article topic|article topic)\s*[:\-–—]\s*(.+)$",
+                line,
+                re.IGNORECASE,
+            )
+            candidate = clean_topic_option(title_match.group(1)) if title_match else ""
+
+        if not candidate:
+            continue
+        if len(candidate) > 260:
+            candidate = candidate[:257].rstrip() + "..."
+        key = candidate.lower()
+        if key not in seen:
+            seen.add(key)
+            topics.append(candidate)
+
+    return topics
+
+
+def suggested_topic_selector(label: str, key: str, research_notes: str) -> str:
+    topics = extract_suggested_topics(research_notes)
+    if topics:
+        return st.selectbox(label, topics, key=key)
+
+    st.warning(
+        "The research response did not include a readable TOPIC_OPTIONS section. "
+        "Run research again, or paste one topic as a fallback."
+    )
+    return st.text_input(
+        label,
+        placeholder="Fallback: paste one topic from the research response.",
+        key=key,
+    )
 
 
 def magazine_style_note(target_magazine: str) -> str:
@@ -1936,7 +2008,7 @@ def main() -> None:
                 )
                 st.session_state["topics"] = topics
                 st.session_state["topic_sources"] = sources
-                st.session_state.pop("classic_manual_topic", None)
+                st.session_state.pop("classic_topic_choice", None)
                 st.session_state.pop("classic_target_magazine", None)
 
         if "topics" in st.session_state:
@@ -1944,10 +2016,10 @@ def main() -> None:
             st.markdown(st.session_state["topics"])
             render_sources("Research sources", st.session_state.get("topic_sources", []))
 
-            selected_topic_title = st.text_input(
-                "Manually selected topic for writing",
-                placeholder="Type or paste the Gujarati topic you want to write.",
-                key="classic_manual_topic",
+            selected_topic_title = suggested_topic_selector(
+                "Select one current farmer-problem topic for writing",
+                "classic_topic_choice",
+                st.session_state["topics"],
             )
             selected_topic_notes = st.text_area(
                 "Research notes to use for the selected topic",
@@ -1965,7 +2037,7 @@ def main() -> None:
 
             if st.button("Use this research to write article", key="classic_write_article"):
                 if not selected_topic_title.strip():
-                    st.warning("Please manually select or type one topic before writing.")
+                    st.warning("Please select one suggested topic before writing.")
                 elif not selected_target_magazine:
                     st.warning("Please select the target magazine personality before writing.")
                 else:
@@ -2188,7 +2260,7 @@ def main() -> None:
                 st.session_state["story_sources"] = sources
                 st.session_state["story_saved_topic_hint"] = story_topic_hint
                 st.session_state["story_saved_crop_focus"] = story_crop_focus
-                st.session_state.pop("story_manual_topic", None)
+                st.session_state.pop("story_topic_choice", None)
                 st.session_state.pop("story_target_magazine", None)
                 st.session_state.pop("story_article", None)
                 st.session_state.pop("story_rewritten_article", None)
@@ -2200,10 +2272,10 @@ def main() -> None:
             st.markdown(st.session_state["story_research"])
             render_sources("Tab 2 research sources", st.session_state.get("story_sources", []))
 
-            story_selected_topic = st.text_input(
-                "Manually selected topic for Tab 2",
-                placeholder="Type or paste the topic you choose from the research options.",
-                key="story_manual_topic",
+            story_selected_topic = suggested_topic_selector(
+                "Select one current farmer-problem topic for Tab 2",
+                "story_topic_choice",
+                st.session_state["story_research"],
             )
             story_research_notes = st.text_area(
                 "Selected research notes for Tab 2",
@@ -2221,7 +2293,7 @@ def main() -> None:
 
             if st.button("Use this research to write story + science article", key="story_write_article"):
                 if not story_selected_topic.strip():
-                    st.warning("Please manually select or type one Tab 2 topic before writing.")
+                    st.warning("Please select one suggested Tab 2 topic before writing.")
                 elif not story_target_magazine:
                     st.warning("Please select the target magazine personality before writing.")
                 else:
@@ -2474,7 +2546,7 @@ def main() -> None:
                 st.session_state["wisdom_saved_crop_focus"] = wisdom_crop_focus
                 st.session_state["wisdom_saved_season_context"] = wisdom_season_context
                 st.session_state["wisdom_saved_target_magazine"] = wisdom_target_magazine
-                st.session_state.pop("wisdom_manual_topic", None)
+                st.session_state.pop("wisdom_topic_choice", None)
                 st.session_state.pop("wisdom_article_target_magazine", None)
                 st.session_state.pop("wisdom_article", None)
                 st.session_state.pop("wisdom_rewritten_article", None)
@@ -2486,10 +2558,10 @@ def main() -> None:
             st.markdown(st.session_state["wisdom_research"])
             render_sources("Tab 3 research sources", st.session_state.get("wisdom_sources", []))
 
-            wisdom_selected_topic = st.text_input(
-                "Manually selected topic for Tab 3",
-                placeholder="Type or paste the topic you choose from the research options.",
-                key="wisdom_manual_topic",
+            wisdom_selected_topic = suggested_topic_selector(
+                "Select one current farmer-problem topic for Tab 3",
+                "wisdom_topic_choice",
+                st.session_state["wisdom_research"],
             )
             wisdom_research_notes = st.text_area(
                 "Selected research notes for Tab 3",
@@ -2507,7 +2579,7 @@ def main() -> None:
 
             if st.button("Use this research to write farm wisdom article", key="wisdom_write_article"):
                 if not wisdom_selected_topic.strip():
-                    st.warning("Please manually select or type one Tab 3 topic before writing.")
+                    st.warning("Please select one suggested Tab 3 topic before writing.")
                 elif not wisdom_article_target_magazine:
                     st.warning("Please select the target magazine personality before writing.")
                 else:
@@ -2763,7 +2835,7 @@ def main() -> None:
                 st.session_state["discovery_saved_crop_focus"] = discovery_crop_focus
                 st.session_state["discovery_saved_season_context"] = discovery_season_context
                 st.session_state["discovery_saved_target_magazine"] = discovery_target_magazine
-                st.session_state.pop("discovery_manual_topic", None)
+                st.session_state.pop("discovery_topic_choice", None)
                 st.session_state.pop("discovery_article_target_magazine", None)
                 st.session_state.pop("discovery_article", None)
                 st.session_state.pop("discovery_rewritten_article", None)
@@ -2775,10 +2847,10 @@ def main() -> None:
             st.markdown(st.session_state["discovery_research"])
             render_sources("Tab 4 research sources", st.session_state.get("discovery_sources", []))
 
-            discovery_selected_topic = st.text_input(
-                "Manually selected topic for Tab 4",
-                placeholder="Type or paste the topic you choose from the research options.",
-                key="discovery_manual_topic",
+            discovery_selected_topic = suggested_topic_selector(
+                "Select one current farmer-problem topic for Tab 4",
+                "discovery_topic_choice",
+                st.session_state["discovery_research"],
             )
             discovery_research_notes = st.text_area(
                 "Selected research notes for Tab 4",
@@ -2796,7 +2868,7 @@ def main() -> None:
 
             if st.button("Use this research to write field discovery article", key="discovery_write_article"):
                 if not discovery_selected_topic.strip():
-                    st.warning("Please manually select or type one Tab 4 topic before writing.")
+                    st.warning("Please select one suggested Tab 4 topic before writing.")
                 elif not discovery_article_target_magazine:
                     st.warning("Please select the target magazine personality before writing.")
                 else:
