@@ -65,6 +65,14 @@ MAGAZINE_OPTIONS = [
     "Gujarati long-form agricultural magazine",
 ]
 
+FIELD_DISCOVERY_MAGAZINE_OPTIONS = [
+    "Gujarati long-form agricultural magazine",
+    "Krushi Vigyan",
+    "Krushi Go-Vidya",
+    "Krushi Jivan",
+    "Gujarati farmer magazine",
+]
+
 MAGAZINE_STYLE_NOTES = {
     "Krishi Jagran Gujarati": (
         "Digital Gujarati agriculture news/explainer style. Use a strong clickable "
@@ -1004,6 +1012,12 @@ Research assignment:
 - Crop: {crop_focus or "No specific crop"}
 - Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
 
+Tab 4 magazine requirement:
+- Do not frame this as Agro Sandesh.
+- Do not use daily newspaper, short news, alert, or breaking-news style.
+- Research should support a full Gujarati magazine feature with scene,
+  observation, discovery, reflection, farmer meaning, and practical depth.
+
 {current_problem_research_guide(month, region)}
 
 Research priorities:
@@ -1372,6 +1386,14 @@ def field_discovery_article_prompt(
 Write a Gujarati agricultural magazine feature using an original field-discovery
 voice inspired by careful observation of farm life and seasons.
 
+Tab 4 magazine requirement:
+- Do not write in Agro Sandesh house style.
+- Do not write like a daily newspaper, news alert, short advisory, or digital
+  news explainer.
+- Write a full magazine article/feature with narrative depth, scene, observation,
+  discovery, simple science, farmer meaning, and reflective ending.
+- Keep all field-discovery style rules below.
+
 Important authorship instruction:
 - Do not claim that Kristin Kimball or any named writer wrote the article.
 - Do not imitate any writer's exact wording.
@@ -1494,6 +1516,12 @@ def field_discovery_rewrite_prompt(
 Rewrite the following Gujarati article into a stronger scene-based field
 discovery feature for a Gujarati agricultural magazine.
 
+Tab 4 magazine requirement:
+- Remove any Agro Sandesh-style generic extension tone.
+- Remove daily newspaper, short news, alert, or report-like structure.
+- Make it a full magazine feature with narrative flow, observation, discovery,
+  simple science, farmer meaning, and reflective ending.
+
 Important authorship instruction:
 - Do not claim that Kristin Kimball or any named writer wrote the article.
 - Do not imitate exact wording. Use an original Gujarati voice.
@@ -1557,6 +1585,12 @@ def field_discovery_final_editor_prompt(
 Act as the final Gujarati magazine editor for {target_magazine}.
 
 Finalize the article below into a polished field-discovery agricultural feature.
+
+Tab 4 magazine requirement:
+- Final article must not read like Agro Sandesh.
+- Final article must not read like a daily newspaper, short news report, alert,
+  or fast digital explainer.
+- Final article must feel like a complete Gujarati magazine feature.
 
 Final editorial standard:
 - Original Gujarati long-form magazine voice.
@@ -1865,17 +1899,22 @@ def target_magazine_selector(
     subject_area: str,
     research_notes: str,
     fallback: str = "Krushi Vigyan",
+    magazine_options: list[str] = None,
 ):
     if not topic.strip():
-        st.caption("Type your selected topic to get a target magazine suggestion.")
+        st.caption("Select a suggested topic to get a target magazine suggestion.")
         return None
 
+    magazine_options = magazine_options or MAGAZINE_OPTIONS
     suggested_magazine = recommend_target_magazine(
         topic,
         subject_area,
         research_notes,
         fallback,
     )
+    if suggested_magazine not in magazine_options:
+        suggested_magazine = fallback if fallback in magazine_options else magazine_options[0]
+
     st.caption(
         f"Suggested target magazine: {suggested_magazine}. "
         f"{magazine_style_note(suggested_magazine)}"
@@ -1885,16 +1924,18 @@ def target_magazine_selector(
     previous_suggestion = st.session_state.get(suggestion_key)
     if current_magazine is None or current_magazine == previous_suggestion:
         st.session_state[key] = suggested_magazine
+    elif current_magazine not in magazine_options:
+        st.session_state[key] = suggested_magazine
     st.session_state[suggestion_key] = suggested_magazine
 
-    current_index = MAGAZINE_OPTIONS.index(
+    current_index = magazine_options.index(
         st.session_state.get(key, suggested_magazine)
-        if st.session_state.get(key, suggested_magazine) in MAGAZINE_OPTIONS
+        if st.session_state.get(key, suggested_magazine) in magazine_options
         else suggested_magazine
     )
     return st.selectbox(
         "Target magazine personality",
-        MAGAZINE_OPTIONS,
+        magazine_options,
         index=current_index,
         key=key,
     )
@@ -2800,7 +2841,7 @@ def main() -> None:
         with discovery_col4:
             discovery_target_magazine = st.selectbox(
                 "Initial target magazine for Tab 4 research",
-                MAGAZINE_OPTIONS,
+                FIELD_DISCOVERY_MAGAZINE_OPTIONS,
                 index=0,
                 key="discovery_target_magazine",
             )
@@ -2864,6 +2905,7 @@ def main() -> None:
                 subject_area,
                 discovery_research_notes,
                 st.session_state.get("discovery_saved_target_magazine", discovery_target_magazine),
+                FIELD_DISCOVERY_MAGAZINE_OPTIONS,
             )
 
             if st.button("Use this research to write field discovery article", key="discovery_write_article"):
