@@ -1850,12 +1850,12 @@ def main() -> None:
             value=(
                 config_value("PERPLEXITY_MODEL", "sonar-reasoning-pro")
                 if research_provider == PROVIDER_PERPLEXITY
-                else config_value("GEMINI_RESEARCH_MODEL", "gemini-3.5-flash")
+                else config_value("GEMINI_RESEARCH_MODEL", "gemini-3.1-pro-preview")
             ),
         )
         article_model = st.text_input(
             "Gemini article model",
-            value=config_value("GEMINI_ARTICLE_MODEL", "gemini-3.5-flash"),
+            value=config_value("GEMINI_ARTICLE_MODEL", "gemini-3.1-pro-preview"),
         )
         review_provider = st.selectbox(
             "Quality review provider",
