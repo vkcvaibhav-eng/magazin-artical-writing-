@@ -11,6 +11,21 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+try:
+    from rapidfuzz import fuzz
+except ImportError:
+    fuzz = None
+
 
 load_dotenv()
 
@@ -354,6 +369,422 @@ def generate_text(
     raise ValueError(f"Unsupported AI provider: {provider}")
 
 
+PPQS_LABEL_COLUMNS = [
+    "source_file",
+    "source_page",
+    "pesticide_name",
+    "formulation",
+    "crop",
+    "pest",
+    "ai_dose_per_ha",
+    "formulation_dose_per_ha",
+    "dilution_water_l_per_ha",
+    "waiting_period_days",
+    "use_type",
+    "dose_per_10_litre",
+    "remarks",
+]
+
+
+def clean_ppqs_text(text: str) -> str:
+    text = str(text or "")
+    text = text.replace("\u00a0", " ")
+    text = re.sub(r"[–—−]", "-", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def normalize_crop_name(text: str) -> str:
+    text = clean_ppqs_text(text).lower()
+    text = re.sub(r"[^a-z0-9\s/&,-]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_pest_name(text: str) -> str:
+    text = clean_ppqs_text(text).lower()
+    text = re.sub(r"[^a-z0-9\s/&,-]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _empty_ppqs_df() -> "pd.DataFrame":
+    return pd.DataFrame(columns=PPQS_LABEL_COLUMNS)
+
+
+def _require_ppqs_dependencies() -> None:
+    missing = []
+    if pd is None:
+        missing.append("pandas")
+    if pdfplumber is None:
+        missing.append("pdfplumber")
+    if fuzz is None:
+        missing.append("rapidfuzz")
+    if missing:
+        raise ImportError("Install missing packages: " + ", ".join(missing))
+
+
+def _clean_cell(cell) -> str:
+    if cell is None:
+        return ""
+    return clean_ppqs_text(str(cell))
+
+
+def _looks_like_pesticide_heading(text: str) -> bool:
+    text = clean_ppqs_text(text)
+    if not text:
+        return False
+    if re.search(r"\b(crop|pest|dose|dilution|waiting|formulation)\b", text, re.IGNORECASE):
+        return False
+    return bool(
+        re.search(
+            r"\d+(?:\.\d+)?\s*%\s*(?:SC|EC|SP|WP|WG|SG|SL|GR|FS|DS|OD|ME|CS|EW|DP|ULV|WDG)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _split_pesticide_heading(text: str) -> tuple[str, str]:
+    text = clean_ppqs_text(text)
+    match = re.search(
+        r"(.+?)\s+(\d+(?:\.\d+)?\s*%\s*(?:SC|EC|SP|WP|WG|SG|SL|GR|FS|DS|OD|ME|CS|EW|DP|ULV|WDG)\b.*)",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        return clean_ppqs_text(match.group(1)), clean_ppqs_text(match.group(2))
+    return text, ""
+
+
+def _is_header_row(cells: list[str]) -> bool:
+    joined = " ".join(cells).lower()
+    return "crop" in joined and any(word in joined for word in ["pest", "dose", "dilution", "waiting"])
+
+
+def _invalid_water_volume(text: str) -> bool:
+    value = clean_ppqs_text(text).lower()
+    if not value or value in {"-", "na", "n/a", "nil"}:
+        return True
+    return any(
+        phrase in value
+        for phrase in [
+            "not required",
+            "broadcast",
+            "seed dresser",
+            "seed treatment",
+            "dry seed",
+            "not applicable",
+        ]
+    )
+
+
+def _numeric_range(text: str):
+    text = clean_ppqs_text(text).replace(",", "")
+    numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)]
+    if not numbers:
+        return None
+    if len(numbers) == 1:
+        return numbers[0], numbers[0]
+    return min(numbers[0], numbers[1]), max(numbers[0], numbers[1])
+
+
+def _dose_unit(text: str) -> str:
+    value = clean_ppqs_text(text).lower()
+    if re.search(r"\bml\b|m\.l\.|litre|liter", value):
+        return "ml"
+    if re.search(r"\bkg\b|kilogram", value):
+        return "kg"
+    if re.search(r"\bg\b|\bgm\b|gram", value):
+        return "g"
+    return ""
+
+
+def calculate_dose_per_10_litres(formulation_dose, water_volume) -> str:
+    dose_text = clean_ppqs_text(formulation_dose)
+    water_text = clean_ppqs_text(water_volume)
+    if _invalid_water_volume(water_text):
+        return "Not applicable / cannot calculate from label water volume"
+
+    unit = _dose_unit(dose_text)
+    if unit not in {"g", "ml"}:
+        return "Not applicable / cannot calculate from label dose unit"
+
+    dose_range = _numeric_range(dose_text)
+    water_range = _numeric_range(water_text)
+    if not dose_range or not water_range or water_range[0] <= 0 or water_range[1] <= 0:
+        return "Not applicable / cannot calculate from label water volume"
+
+    low = (dose_range[0] / water_range[1]) * 10
+    high = (dose_range[1] / water_range[0]) * 10
+    if abs(low - high) < 0.0001:
+        return f"{low:.1f} {unit} / 10 L water"
+    return f"{low:.1f}-{high:.1f} {unit} / 10 L water"
+
+
+def _detect_use_type(row_text: str, formulation: str, formulation_dose: str, water_volume: str) -> str:
+    text = " ".join([row_text, formulation, formulation_dose, water_volume]).lower()
+    if any(token in text for token in ["seed treatment", "seed dresser", " g/kg", " ml/kg", "kg seed", " ds", " fs"]):
+        return "Seed treatment"
+    if any(token in text for token in ["broadcast", "whorl", "soil", "bait", "fumigation", "burrow", "granule"]):
+        return "Granule / broadcast / soil application"
+    if not _invalid_water_volume(water_volume):
+        return "Foliar spray"
+    return "Other / manual verification"
+
+
+def _label_claim_row(
+    *,
+    source_file: str,
+    source_page: int,
+    pesticide_name: str,
+    formulation: str,
+    crop: str,
+    pest: str,
+    ai_dose: str,
+    formulation_dose: str,
+    water_volume: str,
+    waiting_period: str,
+    raw_text: str,
+    remarks: str = "",
+) -> dict[str, str]:
+    use_type = _detect_use_type(raw_text, formulation, formulation_dose, water_volume)
+    dose_per_10_litre = (
+        calculate_dose_per_10_litres(formulation_dose, water_volume)
+        if use_type == "Foliar spray"
+        else "Not applicable / cannot calculate from label water volume"
+    )
+    if not crop or not pest or not pesticide_name:
+        remarks = "; ".join(filter(None, [remarks, "Needs manual verification"]))
+    return {
+        "source_file": source_file,
+        "source_page": source_page,
+        "pesticide_name": pesticide_name,
+        "formulation": formulation,
+        "crop": crop,
+        "pest": pest,
+        "ai_dose_per_ha": ai_dose,
+        "formulation_dose_per_ha": formulation_dose,
+        "dilution_water_l_per_ha": water_volume,
+        "waiting_period_days": waiting_period,
+        "use_type": use_type,
+        "dose_per_10_litre": dose_per_10_litre,
+        "remarks": remarks,
+    }
+
+
+def _row_from_cells(cells: list[str], current_pesticide: dict, source_file: str, page_num: int, current_crop: str):
+    padded = (cells + [""] * 7)[:7]
+    crop = padded[0] or current_crop
+    pest = padded[1]
+    ai_dose = padded[2]
+    formulation_dose = padded[3]
+    water_volume = padded[4]
+    waiting_period = padded[5]
+    raw_text = " | ".join(cells)
+    row = _label_claim_row(
+        source_file=source_file,
+        source_page=page_num,
+        pesticide_name=current_pesticide.get("name", ""),
+        formulation=current_pesticide.get("formulation", ""),
+        crop=crop,
+        pest=pest,
+        ai_dose=ai_dose,
+        formulation_dose=formulation_dose,
+        water_volume=water_volume,
+        waiting_period=waiting_period,
+        raw_text=raw_text,
+        remarks="Needs manual verification" if len([cell for cell in cells if cell]) < 5 else "",
+    )
+    return row, crop
+
+
+def extract_label_claim_rows_from_pdf(uploaded_file) -> "pd.DataFrame":
+    _require_ppqs_dependencies()
+    source_file = getattr(uploaded_file, "name", "uploaded_ppqs_major_uses.pdf")
+    pdf_bytes = uploaded_file.getvalue()
+    rows = []
+
+    with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+        current_pesticide = {"name": "", "formulation": ""}
+        current_crop = ""
+        for page_index, page in enumerate(pdf.pages, start=1):
+            page_tables = page.extract_tables() or []
+            for table in page_tables:
+                for raw_row in table or []:
+                    cells = [_clean_cell(cell) for cell in (raw_row or [])]
+                    non_empty = [cell for cell in cells if cell]
+                    if not non_empty:
+                        continue
+                    joined = " ".join(non_empty)
+                    if _looks_like_pesticide_heading(joined):
+                        name, formulation = _split_pesticide_heading(joined)
+                        current_pesticide = {"name": name, "formulation": formulation}
+                        current_crop = ""
+                        continue
+                    if _is_header_row(non_empty) or not current_pesticide.get("name"):
+                        continue
+                    row, current_crop = _row_from_cells(
+                        cells,
+                        current_pesticide,
+                        source_file,
+                        page_index,
+                        current_crop,
+                    )
+                    rows.append(row)
+
+            text = page.extract_text() or ""
+            for raw_line in text.splitlines():
+                line = clean_ppqs_text(raw_line)
+                if not line:
+                    continue
+                if _looks_like_pesticide_heading(line):
+                    name, formulation = _split_pesticide_heading(line)
+                    current_pesticide = {"name": name, "formulation": formulation}
+                    continue
+                if not current_pesticide.get("name"):
+                    continue
+                parts = [clean_ppqs_text(part) for part in re.split(r"\s{2,}|\t+", line) if clean_ppqs_text(part)]
+                if len(parts) >= 5 and not _is_header_row(parts):
+                    row, current_crop = _row_from_cells(
+                        parts,
+                        current_pesticide,
+                        source_file,
+                        page_index,
+                        current_crop,
+                    )
+                    row["remarks"] = "; ".join(filter(None, [row["remarks"], "Text extraction row - verify against PDF"]))
+                    rows.append(row)
+
+    if not rows:
+        return _empty_ppqs_df()
+
+    df = pd.DataFrame(rows)
+    for column in PPQS_LABEL_COLUMNS:
+        if column not in df.columns:
+            df[column] = ""
+    return df[PPQS_LABEL_COLUMNS].drop_duplicates().reset_index(drop=True)
+
+
+def parse_ppqs_pdf(uploaded_file) -> "pd.DataFrame":
+    return extract_label_claim_rows_from_pdf(uploaded_file)
+
+
+def _keyword_overlap(query: str, value: str) -> bool:
+    query_tokens = {token for token in normalize_pest_name(query).split() if len(token) >= 3}
+    value_tokens = {token for token in normalize_pest_name(value).split() if len(token) >= 3}
+    return bool(query_tokens and query_tokens.intersection(value_tokens))
+
+
+def search_label_claims(df, crop_query, pest_query) -> "pd.DataFrame":
+    _require_ppqs_dependencies()
+    if df is None or df.empty:
+        return _empty_ppqs_df()
+
+    crop_norm = normalize_crop_name(crop_query)
+    pest_norm = normalize_pest_name(pest_query)
+    work = df.copy()
+    work["_crop_norm"] = work["crop"].map(normalize_crop_name)
+    work["_pest_norm"] = work["pest"].map(normalize_pest_name)
+
+    matches = []
+    for index, row in work.iterrows():
+        row_crop = row["_crop_norm"]
+        row_pest = row["_pest_norm"]
+        exact_crop = bool(crop_norm and (crop_norm == row_crop or crop_norm in row_crop or row_crop in crop_norm))
+        exact_pest = bool(pest_norm and (pest_norm == row_pest or pest_norm in row_pest or row_pest in pest_norm))
+        fuzzy_crop = bool(crop_norm and fuzz and fuzz.partial_ratio(crop_norm, row_crop) >= 82)
+        fuzzy_pest = bool(pest_norm and fuzz and fuzz.partial_ratio(pest_norm, row_pest) >= 78)
+        pest_overlap = bool(pest_norm and _keyword_overlap(pest_norm, row_pest))
+
+        rank = None
+        match_type = ""
+        if exact_crop and exact_pest:
+            rank, match_type = 1, "exact crop + exact pest"
+        elif exact_crop and (fuzzy_pest or pest_overlap):
+            rank, match_type = 2, "exact crop + fuzzy/keyword pest"
+        elif (exact_crop or fuzzy_crop) and (exact_pest or fuzzy_pest or pest_overlap):
+            rank, match_type = 3, "fuzzy crop + fuzzy/keyword pest"
+        elif exact_crop or fuzzy_crop:
+            rank, match_type = 4, "crop-only match - verify pest manually"
+
+        if rank:
+            item = row.drop(labels=["_crop_norm", "_pest_norm"]).to_dict()
+            item["match_type"] = match_type
+            item["_match_rank"] = rank
+            matches.append(item)
+
+    if not matches:
+        return _empty_ppqs_df()
+
+    result = pd.DataFrame(matches).sort_values(["_match_rank", "crop", "pest", "pesticide_name"])
+    result = result.drop(columns=["_match_rank"])
+    return result.reset_index(drop=True)
+
+
+def format_verified_chemicals_for_prompt(selected_rows) -> str:
+    if selected_rows is None:
+        return ""
+    if pd is not None and isinstance(selected_rows, pd.DataFrame):
+        records = selected_rows.to_dict("records")
+    else:
+        records = list(selected_rows or [])
+    if not records:
+        return ""
+
+    lines = [
+        "Use only these user-selected PPQS/CIB&RC label-claim chemical rows.",
+        "Do not add any other chemical pesticide or dose.",
+    ]
+    for index, row in enumerate(records, start=1):
+        lines.append(
+            "\n".join(
+                [
+                    f"{index}. Pesticide: {row.get('pesticide_name', '')}",
+                    f"   Formulation: {row.get('formulation', '')}",
+                    f"   Crop: {row.get('crop', '')}",
+                    f"   Pest: {row.get('pest', '')}",
+                    f"   Use type: {row.get('use_type', '')}",
+                    f"   Label a.i. dose/ha: {row.get('ai_dose_per_ha', '')}",
+                    f"   Label formulation dose/ha: {row.get('formulation_dose_per_ha', '')}",
+                    f"   Label dilution water L/ha: {row.get('dilution_water_l_per_ha', '')}",
+                    f"   Calculated dose per 10 L: {row.get('dose_per_10_litre', '')}",
+                    f"   Waiting period days: {row.get('waiting_period_days', '')}",
+                    f"   Source: {row.get('source_file', '')}, page {row.get('source_page', '')}",
+                    f"   Remarks: {row.get('remarks', '')}",
+                ]
+            )
+        )
+    return "\n".join(lines).strip()
+
+
+def verified_chemicals_prompt_section(verified_label_claim_chemicals: str = "") -> str:
+    verified = (verified_label_claim_chemicals or "").strip()
+    return f"""
+VERIFIED_LABEL_CLAIM_CHEMICALS:
+{verified}
+
+Strict chemical control rule:
+- Use chemical control only from VERIFIED_LABEL_CLAIM_CHEMICALS.
+- Do not add any pesticide, formulation, dose, waiting period, water quantity, or
+  seed-treatment recommendation from memory, web search, or deep research.
+- If a chemical from research notes is not present in the verified PPQS/CIB&RC
+  label-claim list for the same crop and pest, exclude it.
+- If VERIFIED_LABEL_CLAIM_CHEMICALS is empty, do not write chemical pesticide
+  recommendation. Write only monitoring, cultural, mechanical, biological and
+  IPM guidance, and advise farmers to confirm chemical control from the latest
+  CIB&RC label claim and local agricultural university/KVK.
+- For foliar spray, write the calculated dose per 10 litres only if it is
+  present in the verified block.
+- For seed treatment, write the label dose separately and do not convert it to
+  10 litres.
+""".strip()
+
+
+# Internal dose conversion examples:
+# calculate_dose_per_10_litres("500 ml/ha", "500 L/ha") -> "10.0 ml / 10 L water"
+# calculate_dose_per_10_litres("250 g/ha", "500 L/ha") -> "5.0 g / 10 L water"
+# Seed treatment g/kg seed and broadcast/NA water are handled as non-foliar rows.
+
+
 def current_problem_research_guide(month: str, region: str) -> str:
     current_date = datetime.now().strftime("%d %B %Y")
     return f"""
@@ -475,6 +906,7 @@ def article_prompt(
     article_length: str,
     target_magazine: str,
     selected_topic: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Write a full Gujarati agricultural extension article for {target_magazine}.
@@ -530,6 +962,8 @@ Soft evidence guidance:
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve farmer usefulness, magazine rhythm, and natural Gujarati prose.
 
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
 Target publication: {target_magazine}
 Language: Gujarati
 Length: {article_length}
@@ -582,6 +1016,7 @@ def rewrite_prompt(
     target_magazine: str,
     selected_topic: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Rewrite the following Gujarati agriculture article into a stronger magazine-quality
@@ -618,6 +1053,8 @@ Rewrite goals:
 10. Do not use bold or italic marker labels inside the article. Use only natural
     Gujarati magazine prose with occasional reader-friendly subheadings.
 
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
 Target publication: {target_magazine}
 Language: Gujarati
 Length: {article_length}
@@ -646,6 +1083,7 @@ def final_editor_prompt(
     target_magazine: str,
     selected_topic: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Act as the final Gujarati magazine editor for {target_magazine}.
@@ -684,6 +1122,8 @@ Soft evidence guidance:
 - Do not demand a source for every sentence.
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve farmer usefulness, magazine rhythm, and natural Gujarati prose.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target publication: {target_magazine}
 Language: Gujarati
@@ -775,6 +1215,7 @@ def story_article_prompt(
     target_magazine: str,
     topic_hint: str,
     research_notes: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Write a Gujarati {target_magazine} article using the following editorial blend:
@@ -844,6 +1285,8 @@ Avoid:
   farmers to follow label recommendations and local agricultural university,
   KVK, or extension officer guidance.
 
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
 Ending:
 End with practical confidence: the problem is manageable, farmers can act,
 science provides solutions, and timely field decisions improve outcomes.
@@ -865,6 +1308,7 @@ def story_rewrite_prompt(
     topic_hint: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Rewrite the following Gujarati article into a stronger {target_magazine} magazine
@@ -893,6 +1337,8 @@ Remove:
 - Repeated "what/why/benefit" blocks.
 - Direct "main reason/effect/result/solution" label headings.
 - Unsupported outbreak claims, official advisories, and unsafe pesticide doses.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target publication: {target_magazine}
 Language: Gujarati
@@ -923,6 +1369,7 @@ def story_final_editor_prompt(
     topic_hint: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Act as the final Gujarati magazine editor for {target_magazine}.
@@ -958,6 +1405,8 @@ Soft evidence guidance:
 - Do not demand a source for every sentence.
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve storytelling, farmer usefulness, and magazine rhythm.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target publication: {target_magazine}
 Language: Gujarati
@@ -1066,6 +1515,7 @@ def farm_wisdom_article_prompt(
     season_context: str,
     target_magazine: str,
     research_notes: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Write a Gujarati agricultural magazine article using an original farmer-scientist
@@ -1161,6 +1611,8 @@ Avoid:
   "effect", "result", or "solution".
 - Unsupported outbreak claims, official advisories, and unsafe pesticide doses.
 
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
 Research notes and sources:
 {research_notes}
 
@@ -1179,6 +1631,7 @@ def farm_wisdom_rewrite_prompt(
     target_magazine: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Rewrite the following Gujarati article into a stronger observation-first farm
@@ -1206,6 +1659,8 @@ Rewrite goals:
    health, yield, quality, profitability, and wiser decisions.
 8. Preserve scientific accuracy and source-aware caution.
 9. Avoid unsupported outbreak claims, official advisories, and pesticide doses.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target magazine: {target_magazine}
 Target magazine personality:
@@ -1240,6 +1695,7 @@ def farm_wisdom_final_editor_prompt(
     target_magazine: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Act as the final Gujarati magazine editor for {target_magazine}.
@@ -1274,6 +1730,8 @@ Soft evidence guidance:
 - Do not demand a source for every sentence.
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve the farmer-scientist conversation and lived-in magazine voice.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target magazine: {target_magazine}
 Target magazine personality:
@@ -1378,6 +1836,7 @@ def field_discovery_article_prompt(
     season_context: str,
     target_magazine: str,
     research_notes: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Write a Gujarati agricultural magazine feature using an original field-discovery
@@ -1490,6 +1949,8 @@ Avoid:
   "effect", "result", or "solution".
 - Unsupported outbreak claims, official advisories, and unsafe pesticide doses.
 
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
 Ending style:
 End with reflection, a lesson learned, deeper understanding, renewed
 appreciation for observation, and a hopeful outlook. The ending should leave
@@ -1513,6 +1974,7 @@ def field_discovery_rewrite_prompt(
     target_magazine: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Rewrite the following Gujarati article into a stronger scene-based field
@@ -1553,6 +2015,8 @@ Rewrite goals:
 9. Avoid unsupported outbreak claims, official advisories, and pesticide doses.
 10. End with reflection and renewed appreciation for careful observation.
 
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
 Target magazine: {target_magazine}
 Target magazine personality:
 {magazine_style_note(target_magazine)}
@@ -1586,6 +2050,7 @@ def field_discovery_final_editor_prompt(
     target_magazine: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Act as the final Gujarati magazine editor for {target_magazine}.
@@ -1633,6 +2098,8 @@ Soft evidence guidance:
 - Do not demand a source for every sentence.
 - Do not add inline citations, reference lists, or academic evidence language.
 - Preserve the field-discovery journey and reflective magazine voice.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target magazine: {target_magazine}
 Target magazine personality:
@@ -1715,6 +2182,7 @@ def farmer_engagement_article_prompt(
     season_context: str,
     target_magazine: str,
     research_notes: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Write a Gujarati agricultural magazine article in the farmer-engagement style:
@@ -1788,6 +2256,8 @@ too many pesticide names, fear-based writing, political discussion, government
 scheme discussion, academic references, copied author voice, unsupported
 outbreak claims, and unsafe pesticide dosage.
 
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
 Special ending boxes:
 At the end, add two short reader-friendly boxes:
 1. ખેડૂત માટે 5 યાદ રાખવા જેવી વાતો
@@ -1822,6 +2292,7 @@ def farmer_engagement_rewrite_prompt(
     target_magazine: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Rewrite the Gujarati article into a stronger farmer-engagement magazine article:
@@ -1842,6 +2313,8 @@ Keep the facts and selected topic, but improve:
 Avoid thesis style, literature review style, report-like ending, fear-based
 writing, unsafe pesticide dosage, unsupported local claims, and copied author
 voice.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target magazine: {target_magazine}
 Target magazine personality:
@@ -1876,6 +2349,7 @@ def farmer_engagement_final_editor_prompt(
     target_magazine: str,
     research_notes: str,
     article: str,
+    verified_label_claim_chemicals: str = "",
 ) -> str:
     return f"""
 Act as the final Gujarati magazine editor for {target_magazine}.
@@ -1897,6 +2371,8 @@ Final checks to apply silently:
 10. Does it end with practical wisdom?
 11. Are the two boxes present and short:
     "ખેડૂત માટે 5 યાદ રાખવા જેવી વાતો" and "આ ભૂલો ટાળો"?
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target magazine: {target_magazine}
 Target magazine personality:
@@ -2217,6 +2693,181 @@ def target_magazine_selector(
     )
 
 
+def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
+    st.session_state.setdefault("verified_label_claim_chemicals", "")
+    missing = []
+    if pd is None:
+        missing.append("pandas")
+    if pdfplumber is None:
+        missing.append("pdfplumber")
+    if fuzz is None:
+        missing.append("rapidfuzz")
+
+    if pd is not None:
+        st.session_state.setdefault("ppqs_label_df", _empty_ppqs_df())
+        st.session_state.setdefault("ppqs_matched_df", _empty_ppqs_df())
+        st.session_state.setdefault("ppqs_selected_rows", _empty_ppqs_df())
+    st.session_state.setdefault("ppqs_search_has_run", False)
+    if "ppqs_crop_query" not in st.session_state:
+        st.session_state["ppqs_crop_query"] = crop_default or ""
+
+    with st.expander("PPQS / CIB&RC Label Claim Checker", expanded=False):
+        st.warning(
+            "Only selected label-claim pesticides will be used in the article. "
+            "AI will not add other chemicals."
+        )
+
+        if missing:
+            st.info(
+                "Install missing packages before using the checker: "
+                + ", ".join(missing)
+            )
+            return st.session_state.get("verified_label_claim_chemicals", "")
+
+        uploaded_file = st.file_uploader(
+            "Upload latest PPQS/CIB&RC Major Uses PDF",
+            type=["pdf"],
+            key="ppqs_pdf_upload",
+        )
+        crop_query = st.text_input(
+            "Crop name for label claim search",
+            key="ppqs_crop_query",
+        )
+        pest_query = st.text_input(
+            "Pest name for label claim search",
+            placeholder="Example: thrips, fruit borer, mites, whitefly",
+            key="ppqs_pest_query",
+        )
+
+        parse_clicked = st.button(
+            "Parse / Update Label Claim Database",
+            key="ppqs_parse_button",
+        )
+        if parse_clicked:
+            if uploaded_file is None:
+                st.info("Upload the latest PPQS/CIB&RC Major Uses PDF first.")
+            else:
+                try:
+                    with st.spinner("Parsing PPQS/CIB&RC label-claim PDF..."):
+                        parsed_df = parse_ppqs_pdf(uploaded_file)
+                    st.session_state["ppqs_label_df"] = parsed_df
+                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
+                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
+                    st.session_state["verified_label_claim_chemicals"] = ""
+                    st.session_state["ppqs_selected_indices"] = []
+                    st.session_state["ppqs_search_has_run"] = False
+                    if parsed_df.empty:
+                        st.warning(
+                            "No label-claim rows were extracted. The PDF may need "
+                            "manual verification or a cleaner text/table version."
+                        )
+                    else:
+                        st.success(f"Parsed {len(parsed_df)} label-claim rows.")
+                except Exception as exc:
+                    st.session_state["ppqs_label_df"] = _empty_ppqs_df()
+                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
+                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
+                    st.session_state["verified_label_claim_chemicals"] = ""
+                    st.error(f"Could not parse the PPQS PDF: {exc}")
+
+        label_df = st.session_state.get("ppqs_label_df", _empty_ppqs_df())
+        if isinstance(label_df, pd.DataFrame) and not label_df.empty:
+            st.caption(f"Current parsed PPQS database: {len(label_df)} rows.")
+        elif uploaded_file is None:
+            st.info("Upload and parse a PPQS/CIB&RC Major Uses PDF to enable chemical verification.")
+
+        search_clicked = st.button(
+            "Search Label Claim Pesticides",
+            key="ppqs_search_button",
+        )
+        if search_clicked:
+            if not isinstance(label_df, pd.DataFrame) or label_df.empty:
+                st.info("Parse the PPQS/CIB&RC PDF before searching.")
+            elif not crop_query.strip() and not pest_query.strip():
+                st.warning("Enter at least a crop name or pest name for label-claim search.")
+            else:
+                try:
+                    matched_df = search_label_claims(label_df, crop_query, pest_query)
+                    st.session_state["ppqs_matched_df"] = matched_df
+                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
+                    st.session_state["verified_label_claim_chemicals"] = ""
+                    st.session_state["ppqs_selected_indices"] = []
+                    st.session_state["ppqs_search_has_run"] = True
+                except Exception as exc:
+                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
+                    st.session_state["verified_label_claim_chemicals"] = ""
+                    st.error(f"Could not search label-claim rows: {exc}")
+
+        matched_df = st.session_state.get("ppqs_matched_df", _empty_ppqs_df())
+        if isinstance(matched_df, pd.DataFrame) and not matched_df.empty:
+            display_columns = [
+                column
+                for column in PPQS_LABEL_COLUMNS + ["match_type"]
+                if column in matched_df.columns
+            ]
+            st.dataframe(
+                matched_df[display_columns],
+                hide_index=True,
+                use_container_width=True,
+            )
+            st.download_button(
+                "Download matched label-claim CSV",
+                data=matched_df.to_csv(index=False).encode("utf-8-sig"),
+                file_name="ppqs_label_claim_matches.csv",
+                mime="text/csv",
+                key="ppqs_download_matches",
+            )
+
+            if "match_type" in matched_df.columns and matched_df["match_type"].str.contains("crop-only", case=False, na=False).any():
+                st.warning("Some results are crop-only matches. Verify the pest manually before selecting them.")
+            if "remarks" in matched_df.columns and matched_df["remarks"].str.contains("Needs manual verification", case=False, na=False).any():
+                st.warning("Some extracted rows need manual verification against the source PDF.")
+
+            options = matched_df.index.tolist()
+            current_selection = st.session_state.get("ppqs_selected_indices", [])
+            st.session_state["ppqs_selected_indices"] = [
+                index for index in current_selection if index in options
+            ]
+
+            def label_claim_option(index: int) -> str:
+                row = matched_df.loc[index]
+                dose = row.get("dose_per_10_litre", "")
+                label_dose = row.get("formulation_dose_per_ha", "")
+                return (
+                    f"{row.get('pesticide_name', '')} {row.get('formulation', '')} | "
+                    f"{row.get('crop', '')} | {row.get('pest', '')} | "
+                    f"{dose or label_dose} | page {row.get('source_page', '')}"
+                )
+
+            selected_indices = st.multiselect(
+                "Select pesticides allowed for the article",
+                options=options,
+                format_func=label_claim_option,
+                key="ppqs_selected_indices",
+            )
+            selected_df = (
+                matched_df.loc[selected_indices].reset_index(drop=True)
+                if selected_indices
+                else _empty_ppqs_df()
+            )
+            st.session_state["ppqs_selected_rows"] = selected_df
+            st.session_state["verified_label_claim_chemicals"] = (
+                format_verified_chemicals_for_prompt(selected_df)
+            )
+            if selected_indices:
+                st.success(f"{len(selected_indices)} verified label-claim row(s) selected for article prompts.")
+            else:
+                st.info("No label-claim pesticide selected. Chemical recommendations will be excluded.")
+        elif st.session_state.get("ppqs_search_has_run"):
+            st.warning(
+                "No matching label-claim pesticide found in uploaded PPQS PDF for "
+                "this crop-pest query. Chemical recommendation will be excluded "
+                "unless manually verified."
+            )
+
+    return st.session_state.get("verified_label_claim_chemicals", "")
+
+
 def main() -> None:
     st.title("Agro Sandesh Gujarati Agriculture Article Writer")
     st.caption(
@@ -2293,6 +2944,7 @@ def main() -> None:
         placeholder="Example: mango, okra, sugarcane, fruit crops, vegetables",
     )
     article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=1)
+    verified_label_claim_chemicals = render_ppqs_label_claim_checker(crop_focus)
 
     client = build_client(api_keys[PROVIDER_GEMINI])
     tab_classic, tab_story, tab_farm_wisdom, tab_field_discovery, tab_farmer_engagement = st.tabs(
@@ -2372,6 +3024,7 @@ def main() -> None:
                             article_length,
                             selected_target_magazine,
                             selected_topic,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
                         article, sources = generate_text(
                             client,
@@ -2446,6 +3099,7 @@ def main() -> None:
                             st.session_state.get("selected_target_magazine", "Agro Sandesh"),
                             st.session_state.get("selected_topic", ""),
                             draft_article,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.55,
@@ -2495,6 +3149,7 @@ def main() -> None:
                             st.session_state.get("selected_target_magazine", "Agro Sandesh"),
                             st.session_state.get("selected_topic", ""),
                             rewritten_article,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.35,
@@ -2629,6 +3284,7 @@ def main() -> None:
                             story_target_magazine,
                             story_selected_topic,
                             story_selected_context,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
                         article, sources = generate_text(
                             client,
@@ -2711,6 +3367,7 @@ def main() -> None:
                             st.session_state.get("story_selected_topic", ""),
                             st.session_state.get("story_research_notes_saved", ""),
                             story_draft,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.45,
@@ -2761,6 +3418,7 @@ def main() -> None:
                             st.session_state.get("story_selected_topic", ""),
                             st.session_state.get("story_research_notes_saved", ""),
                             story_rewrite,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.3,
@@ -2916,6 +3574,7 @@ def main() -> None:
                             st.session_state.get("wisdom_saved_season_context", wisdom_season_context),
                             wisdom_article_target_magazine,
                             wisdom_selected_context,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
                         article, sources = generate_text(
                             client,
@@ -2999,6 +3658,7 @@ def main() -> None:
                             st.session_state.get("wisdom_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("wisdom_research_notes_saved", ""),
                             wisdom_draft,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.45,
@@ -3050,6 +3710,7 @@ def main() -> None:
                             st.session_state.get("wisdom_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("wisdom_research_notes_saved", ""),
                             wisdom_rewrite,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.3,
@@ -3205,6 +3866,7 @@ def main() -> None:
                             st.session_state.get("discovery_saved_season_context", discovery_season_context),
                             discovery_article_target_magazine,
                             discovery_selected_context,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
                         article, sources = generate_text(
                             client,
@@ -3288,6 +3950,7 @@ def main() -> None:
                             st.session_state.get("discovery_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("discovery_research_notes_saved", ""),
                             discovery_draft,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.45,
@@ -3339,6 +4002,7 @@ def main() -> None:
                             st.session_state.get("discovery_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("discovery_research_notes_saved", ""),
                             discovery_rewrite,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.3,
@@ -3505,6 +4169,7 @@ def main() -> None:
                             st.session_state.get("engagement_saved_season_context", engagement_season_context),
                             engagement_article_target_magazine,
                             engagement_selected_context,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
                         article, sources = generate_text(
                             client,
@@ -3588,6 +4253,7 @@ def main() -> None:
                             st.session_state.get("engagement_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("engagement_research_notes_saved", ""),
                             engagement_draft,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.45,
@@ -3639,6 +4305,7 @@ def main() -> None:
                             st.session_state.get("engagement_selected_target_magazine", "Krushi Vigyan"),
                             st.session_state.get("engagement_research_notes_saved", ""),
                             engagement_rewrite,
+                            verified_label_claim_chemicals=verified_label_claim_chemicals,
                         ),
                         use_search=False,
                         temperature=0.3,
