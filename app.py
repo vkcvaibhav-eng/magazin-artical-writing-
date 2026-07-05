@@ -835,6 +835,8 @@ def topic_research_prompt(
     region: str,
     subject_area: str,
     crop_focus: str,
+    manual_title: str = "",
+    search_details: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati agriculture magazines.
@@ -844,6 +846,8 @@ agriculture article topics for {month} in {region}.
 
 Subject focus: {subject_area}
 Crop focus, if any: {crop_focus or "No specific crop focus"}
+
+{manual_search_context(manual_title, search_details)}
 
 {current_problem_research_guide(month, region)}
 
@@ -1150,6 +1154,7 @@ def story_research_prompt(
     subject_area: str,
     crop_focus: str,
     topic_hint: str,
+    search_details: str = "",
 ) -> str:
     return f"""
 You are a senior agricultural research assistant for Gujarati agriculture magazines.
@@ -1165,6 +1170,8 @@ Research assignment:
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
 - Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{manual_search_context(topic_hint, search_details)}
 
 {current_problem_research_guide(month, region)}
 
@@ -1436,6 +1443,7 @@ def farm_wisdom_research_prompt(
     topic_hint: str,
     season_context: str,
     target_magazine: str,
+    search_details: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati farmer-oriented magazines.
@@ -1452,6 +1460,8 @@ Research assignment:
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
 - Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{manual_search_context(topic_hint, search_details)}
 
 Tab 4 magazine requirement:
 - The selected target magazine is only a publication/personality reference.
@@ -1764,6 +1774,7 @@ def field_discovery_research_prompt(
     topic_hint: str,
     season_context: str,
     target_magazine: str,
+    search_details: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati long-form agricultural
@@ -1782,6 +1793,8 @@ Research assignment:
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
 - Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{manual_search_context(topic_hint, search_details)}
 
 {current_problem_research_guide(month, region)}
 
@@ -2132,6 +2145,7 @@ def farmer_engagement_research_prompt(
     topic_hint: str,
     season_context: str,
     target_magazine: str,
+    search_details: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati farmer-oriented
@@ -2148,6 +2162,8 @@ Research assignment:
 - Subject area: {subject_area}
 - Crop: {crop_focus or "No specific crop"}
 - Topic hint: {topic_hint or "Find current ranked topic options; user will choose from suggestions"}
+
+{manual_search_context(topic_hint, search_details)}
 
 {current_problem_research_guide(month, region)}
 
@@ -2531,12 +2547,68 @@ def render_sources(title: str, sources: list[dict[str, str]]) -> None:
             st.markdown(f"{index}. [{source['title']}]({source['uri']})")
 
 
-def selected_topic_context(topic: str, research_notes: str) -> str:
+def manual_search_context(manual_title: str, search_details: str) -> str:
+    manual_title = (manual_title or "").strip()
+    search_details = (search_details or "").strip()
+    if not manual_title and not search_details:
+        return ""
+
+    lines = ["Manual title and search guidance from user:"]
+    if manual_title:
+        lines.append(f"- Gujarati article title typed by user: {manual_title}")
+    if search_details:
+        lines.append(f"- Extra details to guide search: {search_details}")
+    lines.extend(
+        [
+            "- Use this input to shape search queries, source choice, and topic ranking.",
+            "- If a manual title is given, keep research focused on it and include it,",
+            "  or a close evidence-backed refinement of it, as TOPIC 1.",
+            "- Do not invent evidence to fit the manual title; mention uncertainty and",
+            "  local verification needs when support is weak.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def manual_topic_inputs(prefix: str) -> tuple[str, str]:
+    manual_title = st.text_input(
+        "Manual Gujarati article title optional",
+        placeholder="Type the article title in Gujarati, or leave blank for topic suggestions.",
+        key=f"{prefix}_manual_title",
+    )
+    search_details = st.text_area(
+        "Extra details to guide search optional",
+        placeholder=(
+            "Crop, pest or disease, district, season, symptoms, farmer question, "
+            "market issue, source clue, or any point the article must cover."
+        ),
+        height=100,
+        key=f"{prefix}_search_details",
+    )
+    return manual_title, search_details
+
+
+def selected_topic_context(
+    topic: str,
+    research_notes: str,
+    manual_title: str = "",
+    search_details: str = "",
+) -> str:
     topic = (topic or "").strip()
     research_notes = (research_notes or "").strip()
+    manual_title = (manual_title or "").strip()
+    search_details = (search_details or "").strip()
+    parts = [f"Selected article topic:\n{topic}"]
+    if manual_title or search_details:
+        manual_parts = []
+        if manual_title:
+            manual_parts.append(f"Manual Gujarati title from user:\n{manual_title}")
+        if search_details:
+            manual_parts.append(f"Extra user details for search and article:\n{search_details}")
+        parts.append("\n\n".join(manual_parts))
     if research_notes:
-        return f"Selected suggested topic:\n{topic}\n\nResearch notes:\n{research_notes}"
-    return f"Selected suggested topic:\n{topic}"
+        parts.append(f"Research notes:\n{research_notes}")
+    return "\n\n".join(parts)
 
 
 def clean_topic_option(option: str) -> str:
@@ -2577,8 +2649,19 @@ def extract_suggested_topics(research_notes: str) -> list[str]:
     return topics
 
 
-def suggested_topic_selector(label: str, key: str, research_notes: str) -> str:
+def suggested_topic_selector(
+    label: str,
+    key: str,
+    research_notes: str,
+    manual_title: str = "",
+) -> str:
     topics = extract_suggested_topics(research_notes)
+    manual_title = clean_topic_option(manual_title)
+    if manual_title:
+        manual_key = manual_title.lower()
+        topics = [manual_title] + [
+            topic for topic in topics if clean_topic_option(topic).lower() != manual_key
+        ]
     if topics:
         return st.selectbox(label, topics, key=key)
 
@@ -2588,6 +2671,7 @@ def suggested_topic_selector(label: str, key: str, research_notes: str) -> str:
     )
     return st.text_input(
         label,
+        value=manual_title,
         placeholder="Fallback: paste one topic from the research response.",
         key=key,
     )
@@ -2963,10 +3047,18 @@ def main() -> None:
             "Use this tab for the original topic discovery, Gujarati article draft, "
             "Swaminathan-inspired rewrite, final editor check, and Word download."
         )
+        classic_manual_title, classic_search_details = manual_topic_inputs("classic")
 
         if st.button("Deep research and references", type="primary", key="classic_find_topics"):
             with st.spinner("Researching current and seasonally relevant topics..."):
-                prompt = topic_research_prompt(month, region, subject_area, crop_focus)
+                prompt = topic_research_prompt(
+                    month,
+                    region,
+                    subject_area,
+                    crop_focus,
+                    classic_manual_title,
+                    classic_search_details,
+                )
                 topics, sources = generate_text(
                     client,
                     research_model,
@@ -2978,6 +3070,8 @@ def main() -> None:
                 )
                 st.session_state["topics"] = topics
                 st.session_state["topic_sources"] = sources
+                st.session_state["classic_saved_manual_title"] = classic_manual_title
+                st.session_state["classic_saved_search_details"] = classic_search_details
                 st.session_state.pop("classic_topic_choice", None)
                 st.session_state.pop("classic_target_magazine", None)
 
@@ -2990,6 +3084,7 @@ def main() -> None:
                 "Select one current farmer-problem topic for writing",
                 "classic_topic_choice",
                 st.session_state["topics"],
+                st.session_state.get("classic_saved_manual_title", ""),
             )
             selected_topic_notes = st.text_area(
                 "Research notes to use for the selected topic",
@@ -3014,6 +3109,8 @@ def main() -> None:
                     selected_topic = selected_topic_context(
                         selected_topic_title,
                         selected_topic_notes,
+                        st.session_state.get("classic_saved_manual_title", ""),
+                        st.session_state.get("classic_saved_search_details", ""),
                     )
                     with st.spinner("Writing the Gujarati article draft..."):
                         prompt = article_prompt(
@@ -3195,8 +3292,8 @@ def main() -> None:
         story_col1, story_col2 = st.columns(2)
         with story_col1:
             story_topic_hint = st.text_input(
-                "Topic optional",
-                placeholder="Example: red spider mite in vegetables, mango mites, sugarcane mites",
+                "Manual Gujarati article title optional for Tab 2",
+                placeholder="Type the article title in Gujarati, or leave blank for topic suggestions.",
                 key="story_topic_hint",
             )
         with story_col2:
@@ -3206,6 +3303,15 @@ def main() -> None:
                 placeholder="Example: mango, okra, brinjal, cotton, vegetables",
                 key="story_crop_focus",
             )
+        story_search_details = st.text_area(
+            "Extra details to guide Tab 2 search optional",
+            placeholder=(
+                "Crop, pest or disease, district, season, symptoms, farmer question, "
+                "source clue, or article points to include."
+            ),
+            height=100,
+            key="story_search_details",
+        )
 
         if st.button(
             "Deep research and references for Tab 2",
@@ -3219,6 +3325,7 @@ def main() -> None:
                     subject_area,
                     story_crop_focus,
                     story_topic_hint,
+                    story_search_details,
                 )
                 research, sources = generate_text(
                     client,
@@ -3232,6 +3339,7 @@ def main() -> None:
                 st.session_state["story_research"] = research
                 st.session_state["story_sources"] = sources
                 st.session_state["story_saved_topic_hint"] = story_topic_hint
+                st.session_state["story_saved_search_details"] = story_search_details
                 st.session_state["story_saved_crop_focus"] = story_crop_focus
                 st.session_state.pop("story_topic_choice", None)
                 st.session_state.pop("story_target_magazine", None)
@@ -3249,6 +3357,7 @@ def main() -> None:
                 "Select one current farmer-problem topic for Tab 2",
                 "story_topic_choice",
                 st.session_state["story_research"],
+                st.session_state.get("story_saved_topic_hint", ""),
             )
             story_research_notes = st.text_area(
                 "Selected research notes for Tab 2",
@@ -3273,6 +3382,8 @@ def main() -> None:
                     story_selected_context = selected_topic_context(
                         story_selected_topic,
                         story_research_notes,
+                        st.session_state.get("story_saved_topic_hint", ""),
+                        st.session_state.get("story_saved_search_details", ""),
                     )
                     with st.spinner("Writing the article using the attached prompt style..."):
                         prompt = story_article_prompt(
@@ -3464,8 +3575,8 @@ def main() -> None:
         wisdom_col1, wisdom_col2 = st.columns(2)
         with wisdom_col1:
             wisdom_topic_hint = st.text_input(
-                "Topic optional for Tab 3",
-                placeholder="Example: mites after dry weather, dusty leaves, orchard observation",
+                "Manual Gujarati article title optional for Tab 3",
+                placeholder="Type the article title in Gujarati, or leave blank for topic suggestions.",
                 key="wisdom_topic_hint",
             )
         with wisdom_col2:
@@ -3491,6 +3602,15 @@ def main() -> None:
                 index=0,
                 key="wisdom_target_magazine",
             )
+        wisdom_search_details = st.text_area(
+            "Extra details to guide Tab 3 search optional",
+            placeholder=(
+                "Crop, pest or disease, district, season, symptoms, farmer question, "
+                "source clue, or article points to include."
+            ),
+            height=100,
+            key="wisdom_search_details",
+        )
 
         if st.button(
             "Deep research and references for Tab 3",
@@ -3506,6 +3626,7 @@ def main() -> None:
                     wisdom_topic_hint,
                     wisdom_season_context,
                     wisdom_target_magazine,
+                    wisdom_search_details,
                 )
                 research, sources = generate_text(
                     client,
@@ -3519,6 +3640,7 @@ def main() -> None:
                 st.session_state["wisdom_research"] = research
                 st.session_state["wisdom_sources"] = sources
                 st.session_state["wisdom_saved_topic_hint"] = wisdom_topic_hint
+                st.session_state["wisdom_saved_search_details"] = wisdom_search_details
                 st.session_state["wisdom_saved_crop_focus"] = wisdom_crop_focus
                 st.session_state["wisdom_saved_season_context"] = wisdom_season_context
                 st.session_state["wisdom_saved_target_magazine"] = wisdom_target_magazine
@@ -3538,6 +3660,7 @@ def main() -> None:
                 "Select one current farmer-problem topic for Tab 3",
                 "wisdom_topic_choice",
                 st.session_state["wisdom_research"],
+                st.session_state.get("wisdom_saved_topic_hint", ""),
             )
             wisdom_research_notes = st.text_area(
                 "Selected research notes for Tab 3",
@@ -3562,6 +3685,8 @@ def main() -> None:
                     wisdom_selected_context = selected_topic_context(
                         wisdom_selected_topic,
                         wisdom_research_notes,
+                        st.session_state.get("wisdom_saved_topic_hint", ""),
+                        st.session_state.get("wisdom_saved_search_details", ""),
                     )
                     with st.spinner("Writing the article using the observation-first master prompt..."):
                         prompt = farm_wisdom_article_prompt(
@@ -3756,8 +3881,8 @@ def main() -> None:
         discovery_col1, discovery_col2 = st.columns(2)
         with discovery_col1:
             discovery_topic_hint = st.text_input(
-                "Topic optional for Tab 4",
-                placeholder="Example: orchard after dry wind, leaves changing colour, mites after dust",
+                "Manual Gujarati article title optional for Tab 4",
+                placeholder="Type the article title in Gujarati, or leave blank for topic suggestions.",
                 key="discovery_topic_hint",
             )
         with discovery_col2:
@@ -3783,6 +3908,15 @@ def main() -> None:
                 index=0,
                 key="discovery_target_magazine",
             )
+        discovery_search_details = st.text_area(
+            "Extra details to guide Tab 4 search optional",
+            placeholder=(
+                "Crop, pest or disease, district, season, symptoms, farmer question, "
+                "source clue, or article points to include."
+            ),
+            height=100,
+            key="discovery_search_details",
+        )
 
         if st.button(
             "Deep research and references for Tab 4",
@@ -3798,6 +3932,7 @@ def main() -> None:
                     discovery_topic_hint,
                     discovery_season_context,
                     discovery_target_magazine,
+                    discovery_search_details,
                 )
                 research, sources = generate_text(
                     client,
@@ -3811,6 +3946,7 @@ def main() -> None:
                 st.session_state["discovery_research"] = research
                 st.session_state["discovery_sources"] = sources
                 st.session_state["discovery_saved_topic_hint"] = discovery_topic_hint
+                st.session_state["discovery_saved_search_details"] = discovery_search_details
                 st.session_state["discovery_saved_crop_focus"] = discovery_crop_focus
                 st.session_state["discovery_saved_season_context"] = discovery_season_context
                 st.session_state["discovery_saved_target_magazine"] = discovery_target_magazine
@@ -3830,6 +3966,7 @@ def main() -> None:
                 "Select one current farmer-problem topic for Tab 4",
                 "discovery_topic_choice",
                 st.session_state["discovery_research"],
+                st.session_state.get("discovery_saved_topic_hint", ""),
             )
             discovery_research_notes = st.text_area(
                 "Selected research notes for Tab 4",
@@ -3854,6 +3991,8 @@ def main() -> None:
                     discovery_selected_context = selected_topic_context(
                         discovery_selected_topic,
                         discovery_research_notes,
+                        st.session_state.get("discovery_saved_topic_hint", ""),
+                        st.session_state.get("discovery_saved_search_details", ""),
                     )
                     with st.spinner("Writing the article using the field-discovery master prompt..."):
                         prompt = field_discovery_article_prompt(
@@ -4055,8 +4194,8 @@ def main() -> None:
         engagement_col1, engagement_col2 = st.columns(2)
         with engagement_col1:
             engagement_topic_hint = st.text_input(
-                "Topic optional for Tab 5",
-                placeholder="Example: mites after dry wind, thrips in chilli, fruit quality after rain",
+                "Manual Gujarati article title optional for Tab 5",
+                placeholder="Type the article title in Gujarati, or leave blank for topic suggestions.",
                 key="engagement_topic_hint",
             )
         with engagement_col2:
@@ -4082,6 +4221,15 @@ def main() -> None:
                 index=2,
                 key="engagement_target_magazine",
             )
+        engagement_search_details = st.text_area(
+            "Extra details to guide Tab 5 search optional",
+            placeholder=(
+                "Crop, pest or disease, district, season, symptoms, farmer question, "
+                "source clue, or article points to include."
+            ),
+            height=100,
+            key="engagement_search_details",
+        )
 
         if st.button(
             "Deep research and references for Tab 5",
@@ -4097,6 +4245,7 @@ def main() -> None:
                     engagement_topic_hint,
                     engagement_season_context,
                     engagement_target_magazine,
+                    engagement_search_details,
                 )
                 research, sources = generate_text(
                     client,
@@ -4110,6 +4259,7 @@ def main() -> None:
                 st.session_state["engagement_research"] = research
                 st.session_state["engagement_sources"] = sources
                 st.session_state["engagement_saved_topic_hint"] = engagement_topic_hint
+                st.session_state["engagement_saved_search_details"] = engagement_search_details
                 st.session_state["engagement_saved_crop_focus"] = engagement_crop_focus
                 st.session_state["engagement_saved_season_context"] = engagement_season_context
                 st.session_state["engagement_saved_target_magazine"] = engagement_target_magazine
@@ -4129,6 +4279,7 @@ def main() -> None:
                 "Select one current farmer-problem topic for Tab 5",
                 "engagement_topic_choice",
                 st.session_state["engagement_research"],
+                st.session_state.get("engagement_saved_topic_hint", ""),
             )
             engagement_research_notes = st.text_area(
                 "Selected research notes for Tab 5",
@@ -4157,6 +4308,8 @@ def main() -> None:
                     engagement_selected_context = selected_topic_context(
                         engagement_selected_topic,
                         engagement_research_notes,
+                        st.session_state.get("engagement_saved_topic_hint", ""),
+                        st.session_state.get("engagement_saved_search_details", ""),
                     )
                     with st.spinner("Writing the farmer-engagement article..."):
                         prompt = farmer_engagement_article_prompt(
