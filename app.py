@@ -754,6 +754,56 @@ def download_and_parse_ppqs_pdf(url: str, title: str) -> "pd.DataFrame":
     return extract_label_claim_rows_from_bytes(pdf_bytes, source_name)
 
 
+PPQS_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ppqs_label_cache.json")
+
+
+def load_ppqs_label_cache():
+    """Return (dataframe, meta) from the saved PPQS label cache, or (None, {}).
+
+    The cache is a speed/offline fallback; the live PPQS fetch stays the source
+    of truth and refreshes it. meta carries the 'fetched' date and document list.
+    """
+    try:
+        import json
+
+        with open(PPQS_CACHE_PATH, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (FileNotFoundError, ValueError):
+        return None, {}
+
+    rows = data.get("rows") or []
+    meta = {"fetched": data.get("fetched", ""), "documents": data.get("documents", [])}
+    if pd is None or not rows:
+        return None, meta
+
+    df = pd.DataFrame(rows)
+    for column in PPQS_LABEL_COLUMNS:
+        if column not in df.columns:
+            df[column] = ""
+    return df[PPQS_LABEL_COLUMNS], meta
+
+
+def save_ppqs_label_cache(df, documents: list[str]) -> str:
+    """Persist parsed label rows so later runs load instantly / survive an outage."""
+    if pd is None or df is None or df.empty:
+        return ""
+    try:
+        import datetime
+        import json
+
+        payload = {
+            "fetched": datetime.date.today().isoformat(),
+            "documents": documents,
+            "columns": PPQS_LABEL_COLUMNS,
+            "rows": df.to_dict("records"),
+        }
+        with open(PPQS_CACHE_PATH, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        return payload["fetched"]
+    except Exception:
+        return ""
+
+
 def _keyword_overlap(query: str, value: str) -> bool:
     query_tokens = {token for token in normalize_pest_name(query).split() if len(token) >= 3}
     value_tokens = {token for token in normalize_pest_name(value).split() if len(token) >= 3}
@@ -3137,6 +3187,27 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
             )
             return st.session_state.get("verified_label_claim_chemicals", "")
 
+        # Hybrid: load the saved label cache instantly on first entry, so the
+        # checker works with no wait and even if ppqs.gov.in is unreachable.
+        if not st.session_state.get("ppqs_cache_loaded"):
+            st.session_state["ppqs_cache_loaded"] = True
+            cached_df, cache_meta = load_ppqs_label_cache()
+            current = st.session_state.get("ppqs_label_df")
+            if cached_df is not None and (not isinstance(current, pd.DataFrame) or current.empty):
+                st.session_state["ppqs_label_df"] = cached_df
+                st.session_state["ppqs_data_as_of"] = cache_meta.get("fetched", "")
+                st.session_state["ppqs_data_source"] = "saved"
+
+        data_as_of = st.session_state.get("ppqs_data_as_of", "")
+        data_source = st.session_state.get("ppqs_data_source", "")
+        if data_source == "saved" and data_as_of:
+            st.caption(
+                f"Using saved label data as of {data_as_of}. Refresh below to pull "
+                "the latest quarter from ppqs.gov.in."
+            )
+        elif data_source == "live" and data_as_of:
+            st.caption(f"Using freshly downloaded label data (as of {data_as_of}).")
+
         st.markdown("**Option 1: Load directly from ppqs.gov.in**")
         if st.button("Fetch Major Uses document list from PPQS website", key="ppqs_fetch_list"):
             try:
@@ -3184,29 +3255,46 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                                 )
                         except Exception as exc:
                             errors.append(f"{doc['title']}: {exc}")
-                    parsed_df = (
-                        pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
-                        if frames
-                        else _empty_ppqs_df()
-                    )
-                    st.session_state["ppqs_label_df"] = parsed_df
-                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
-                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
-                    st.session_state["verified_label_claim_chemicals"] = ""
-                    st.session_state["ppqs_selected_indices"] = []
-                    st.session_state["ppqs_search_has_run"] = False
                     for error in errors:
                         st.error(f"Could not load {error}")
-                    if parsed_df.empty and not errors:
-                        st.warning(
-                            "No label-claim rows were extracted from the downloaded "
-                            "PDF(s). Try the manual upload with a cleaner copy."
+
+                    if frames:
+                        parsed_df = (
+                            pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
                         )
-                    elif not parsed_df.empty:
-                        st.success(
-                            f"Parsed {len(parsed_df)} label-claim rows from "
-                            f"{len(frames)} PPQS document(s)."
-                        )
+                        st.session_state["ppqs_label_df"] = parsed_df
+                        st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
+                        st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
+                        st.session_state["verified_label_claim_chemicals"] = ""
+                        st.session_state["ppqs_selected_indices"] = []
+                        st.session_state["ppqs_search_has_run"] = False
+                        # Refresh the on-disk cache so later runs load instantly.
+                        saved_date = save_ppqs_label_cache(parsed_df, selected_doc_titles)
+                        st.session_state["ppqs_data_as_of"] = saved_date
+                        st.session_state["ppqs_data_source"] = "live"
+                        if parsed_df.empty:
+                            st.warning(
+                                "No label-claim rows were extracted from the downloaded "
+                                "PDF(s). Try the manual upload with a cleaner copy."
+                            )
+                        else:
+                            st.success(
+                                f"Parsed {len(parsed_df)} label-claim rows from "
+                                f"{len(frames)} PPQS document(s)."
+                            )
+                    else:
+                        # Live fetch failed entirely: keep whatever saved data we have.
+                        existing = st.session_state.get("ppqs_label_df")
+                        if isinstance(existing, pd.DataFrame) and not existing.empty:
+                            st.warning(
+                                "Could not download from ppqs.gov.in right now. Keeping "
+                                "the saved label data"
+                                + (
+                                    f" (as of {st.session_state.get('ppqs_data_as_of', '')})."
+                                    if st.session_state.get("ppqs_data_as_of")
+                                    else "."
+                                )
+                            )
 
         st.markdown("**Option 2: Upload the PDF manually**")
         uploaded_file = st.file_uploader(
