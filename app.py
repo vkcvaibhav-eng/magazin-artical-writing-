@@ -1042,6 +1042,123 @@ def with_reference_recommendations(context: str, agresco_block: str) -> str:
     return f"{context}\n\n{agresco_block}".strip()
 
 
+CROP_CALENDAR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gujarat_crop_calendar.json")
+KRUSHI_GOVIDYA_URL = "https://aau.in/Krushigovidya"
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def load_crop_calendar() -> dict:
+    """Load the month-by-month Gujarat crop / pest / disease calendar."""
+    try:
+        import json
+
+        with open(CROP_CALENDAR_PATH, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data.get("months", {}) if isinstance(data, dict) else {}
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def _agresco_crop_corpus() -> str:
+    """Lowercased blob of all AGRESCO titles/text, for quick crop coverage checks."""
+    records = load_agresco_recommendations()
+    return " ".join(_agresco_haystack(rec) for rec in records)
+
+
+def _crop_has_agresco_coverage(crop: str, corpus: str) -> bool:
+    tokens = [tok for tok in normalize_crop_name(crop).split() if len(tok) >= 4]
+    return any(tok in corpus for tok in tokens)
+
+
+def _calendar_crops_for_region(entries: list[dict], region: str) -> list[dict]:
+    region_lower = (region or "").lower()
+    whole = (not region_lower) or "whole gujarat" in region_lower or "india" in region_lower
+    kept = []
+    for entry in entries:
+        regions = entry.get("regions", []) or []
+        if whole or any(r == "All" for r in regions):
+            kept.append(entry)
+            continue
+        if any(r.lower() in region_lower or region_lower in r.lower() for r in regions):
+            kept.append(entry)
+    return kept
+
+
+def seasonal_calendar_context(month: str, region: str) -> str:
+    """Build a grounding block describing the real crop stage and pest/disease
+    pressure for the selected month and region, so topics are farmer-specific."""
+    months = load_crop_calendar()
+    info = months.get(month)
+    if not info:
+        return ""
+
+    entries = _calendar_crops_for_region(info.get("crops", []), region)
+    if not entries:
+        entries = info.get("crops", [])
+
+    corpus = _agresco_crop_corpus()
+    covered = []
+    lines = [
+        "GUJARAT_SEASONAL_CALENDAR (AAU Krushi Go-Vidya monthly farm calendar + Gujarat agronomy):",
+        f"Month: {month} — Season: {info.get('season', '')}",
+    ]
+    if info.get("weather"):
+        lines.append(f"Weather pattern now: {info['weather']}")
+    lines.append(f"Current crop situation for {region}:")
+    for entry in entries:
+        crop = entry.get("crop", "")
+        pests = ", ".join(entry.get("pests", []) or []) or "—"
+        diseases = ", ".join(entry.get("diseases", []) or []) or "—"
+        lines.append(
+            f"- {crop}: stage {entry.get('stage', '')}; "
+            f"key pests: {pests}; key diseases: {diseases}; "
+            f"field work: {entry.get('operations', '')}"
+        )
+        if corpus and _crop_has_agresco_coverage(crop, corpus):
+            covered.append(crop)
+
+    lines.append(
+        "Anchor every suggested topic to a real crop stage and the current pest or "
+        "disease pressure above. Reject generic evergreen topics that are not tied "
+        "to this month's field situation."
+    )
+    if covered:
+        lines.append(
+            "Prefer topics on these crops, which have verified Gujarat university "
+            "(AGRESCO) recommendations available in this app: "
+            + ", ".join(dict.fromkeys(covered))
+            + "."
+        )
+    return "\n".join(lines).strip()
+
+
+def render_seasonal_calendar_reference(month: str, region: str) -> None:
+    """Show this month's Gujarat crop calendar and the AAU Krushi Go-Vidya link."""
+    months = load_crop_calendar()
+    info = months.get(month)
+    with st.expander(f"Gujarat crop calendar for {month} (grounds topic search)", expanded=False):
+        if not info:
+            st.info("No calendar entry found for this month.")
+        else:
+            st.caption(
+                f"Season: {info.get('season', '')}. {info.get('weather', '')} "
+                "Deep research uses this to keep topics tied to the real crop stage "
+                "and pest pressure this month."
+            )
+            entries = _calendar_crops_for_region(info.get("crops", []), region) or info.get("crops", [])
+            for entry in entries:
+                pests = ", ".join(entry.get("pests", []) or []) or "—"
+                st.markdown(
+                    f"**{entry.get('crop', '')}** — {entry.get('stage', '')}  \n"
+                    f"Pests: {pests}"
+                )
+        st.markdown(
+            f"Source and monthly issues: [AAU Krushi Go-Vidya]({KRUSHI_GOVIDYA_URL}) "
+            "(open the current month's issue for the full Gujarati farm calendar)."
+        )
+
+
 def render_agresco_recommendation_helper(crop_default: str = "", pest_default: str = "") -> str:
     records = load_agresco_recommendations()
     st.session_state.setdefault("agresco_block", "")
@@ -1172,10 +1289,18 @@ Strict chemical control rule:
 
 def current_problem_research_guide(month: str, region: str) -> str:
     current_date = datetime.now().strftime("%d %B %Y")
+    calendar_block = seasonal_calendar_context(month, region)
+    calendar_section = f"\n{calendar_block}\n" if calendar_block else ""
     return f"""
 Current-problem discovery rules:
 - Current date for research context: {current_date}.
 - Treat this as real farmer-problem discovery for {month}, not generic topic brainstorming.
+{calendar_section}
+- Use the GUJARAT_SEASONAL_CALENDAR above as the primary anchor: pick problems that
+  fit the crops, crop stages, and pest/disease pressure listed for this month and
+  region. You may add other current problems if web evidence supports them.
+- Every topic must name a specific crop, a specific Gujarat sub-region, the crop
+  stage, and a current field symptom. Reject any topic that cannot state all four.
 - Search current web context first: IMD/agromet advisories, Gujarat agricultural
   university/KVK advisories, state agriculture advisories, recent agriculture news,
   rainfall/monsoon updates, mandi/market/input reports, and credible farmer-facing
@@ -3526,6 +3651,7 @@ def main() -> None:
     article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=1)
     verified_label_claim_chemicals = render_ppqs_label_claim_checker(crop_focus)
     agresco_block = render_agresco_recommendation_helper(crop_focus)
+    render_seasonal_calendar_reference(month, region)
 
     client = build_client(api_keys[PROVIDER_GEMINI])
     tab_classic, tab_story, tab_farm_wisdom, tab_field_discovery, tab_farmer_engagement = st.tabs(
