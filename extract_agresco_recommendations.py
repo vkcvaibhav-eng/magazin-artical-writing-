@@ -75,7 +75,12 @@ def split_en_gu(block: str) -> tuple[str, str]:
 def parse_recommendation(rec_no: str, body: str, university: str, year: str,
                          meeting: str, page: int, source_file: str) -> dict:
     section = SECTION_NAMES.get(rec_no.split(".")[1], "")
-    body = ACTION_NOTE.sub(" ", body)
+    # The meeting number is the reliable year anchor: the 7th Combined AGRESCO
+    # was 2011, and meetings run one per year, so year = meeting number + 2004.
+    meeting_num = rec_no.split(".")[0]
+    if meeting_num.isdigit() and 6 < int(meeting_num) < 40:
+        meeting = meeting_num
+        year = str(int(meeting_num) + 2004)
     # Trim everything from the CIB&RC dose table / ingredient tables onward.
     cut = CIBRC_CUT.search(body)
     core = body[: cut.start()] if cut else body
@@ -190,16 +195,25 @@ def main() -> None:
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
-    folder = sys.argv[1]
-    output = sys.argv[2] if len(sys.argv) > 2 else "agresco_recommendations.json"
+
+    # Args ending in .json set the output; everything else is an input PDF or
+    # a folder of PDFs. This lets you pass a whole folder or a specific list.
+    output = "agresco_recommendations.json"
+    inputs = []
+    for arg in sys.argv[1:]:
+        if arg.lower().endswith(".json"):
+            output = arg
+        else:
+            inputs.append(arg)
 
     pdf_paths = []
-    if os.path.isfile(folder):
-        pdf_paths = [folder]
-    else:
-        for name in sorted(os.listdir(folder)):
-            if name.lower().endswith(".pdf"):
-                pdf_paths.append(os.path.join(folder, name))
+    for item in inputs:
+        if os.path.isfile(item):
+            pdf_paths.append(item)
+        elif os.path.isdir(item):
+            for name in sorted(os.listdir(item)):
+                if name.lower().endswith(".pdf"):
+                    pdf_paths.append(os.path.join(item, name))
 
     all_records = []
     for path in pdf_paths:
