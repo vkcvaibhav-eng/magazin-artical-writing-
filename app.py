@@ -135,7 +135,7 @@ PROVIDER_KEY_ENV = {
 
 st.set_page_config(
     page_title="Agro Sandesh Article Writer",
-    page_icon="AS",
+    page_icon="🌾",
     layout="wide",
 )
 
@@ -290,7 +290,7 @@ def generate_perplexity_text(
         payload["reasoning_effort"] = "medium"
 
     response = requests.post(
-        "https://api.perplexity.ai/v1/sonar",
+        "https://api.perplexity.ai/chat/completions",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -301,6 +301,8 @@ def generate_perplexity_text(
     raise_for_api_error(response, PROVIDER_PERPLEXITY)
     data = response.json()
     text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    # Reasoning models prepend a <think>...</think> block; keep only the answer.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     return text, extract_perplexity_sources(data)
 
 
@@ -314,8 +316,10 @@ def generate_openai_text(
     payload = {
         "model": model,
         "input": prompt,
-        "temperature": temperature,
     }
+    # Reasoning models (o-series, gpt-5.x) reject the temperature parameter.
+    if not re.match(r"^(o\d|gpt-5)", model):
+        payload["temperature"] = temperature
 
     response = requests.post(
         "https://api.openai.com/v1/responses",
@@ -367,6 +371,14 @@ def generate_text(
         )
 
     raise ValueError(f"Unsupported AI provider: {provider}")
+
+
+def safe_generate_text(*args, **kwargs):
+    try:
+        return generate_text(*args, **kwargs)
+    except Exception as exc:
+        st.error(f"AI request failed: {exc}")
+        st.stop()
 
 
 PPQS_LABEL_COLUMNS = [
@@ -705,6 +717,8 @@ def search_label_claims(df, crop_query, pest_query) -> "pd.DataFrame":
             rank, match_type = 3, "fuzzy crop + fuzzy/keyword pest"
         elif exact_crop or fuzzy_crop:
             rank, match_type = 4, "crop-only match - verify pest manually"
+        elif not crop_norm and (exact_pest or fuzzy_pest or pest_overlap):
+            rank, match_type = 5, "pest-only match - verify crop manually"
 
         if rank:
             item = row.drop(labels=["_crop_norm", "_pest_norm"]).to_dict()
@@ -2764,15 +2778,9 @@ def target_magazine_selector(
         st.session_state[key] = suggested_magazine
     st.session_state[suggestion_key] = suggested_magazine
 
-    current_index = magazine_options.index(
-        st.session_state.get(key, suggested_magazine)
-        if st.session_state.get(key, suggested_magazine) in magazine_options
-        else suggested_magazine
-    )
     return st.selectbox(
         "Target magazine personality",
         magazine_options,
-        index=current_index,
         key=key,
     )
 
@@ -2902,8 +2910,8 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                 key="ppqs_download_matches",
             )
 
-            if "match_type" in matched_df.columns and matched_df["match_type"].str.contains("crop-only", case=False, na=False).any():
-                st.warning("Some results are crop-only matches. Verify the pest manually before selecting them.")
+            if "match_type" in matched_df.columns and matched_df["match_type"].str.contains("-only", case=False, na=False).any():
+                st.warning("Some results are crop-only or pest-only matches. Verify them manually before selecting.")
             if "remarks" in matched_df.columns and matched_df["remarks"].str.contains("Needs manual verification", case=False, na=False).any():
                 st.warning("Some extracted rows need manual verification against the source PDF.")
 
@@ -3059,7 +3067,7 @@ def main() -> None:
                     classic_manual_title,
                     classic_search_details,
                 )
-                topics, sources = generate_text(
+                topics, sources = safe_generate_text(
                     client,
                     research_model,
                     prompt,
@@ -3123,7 +3131,7 @@ def main() -> None:
                             selected_topic,
                             verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
-                        article, sources = generate_text(
+                        article, sources = safe_generate_text(
                             client,
                             model,
                             prompt,
@@ -3168,7 +3176,7 @@ def main() -> None:
 
             if review_clicked:
                 with st.spinner("Reviewing article quality..."):
-                    review, _ = generate_text(
+                    review, _ = safe_generate_text(
                         client,
                         review_model,
                         review_prompt(
@@ -3184,7 +3192,7 @@ def main() -> None:
 
             if rewrite_clicked:
                 with st.spinner("Rewriting the article with stronger farmer-centric flow..."):
-                    rewrite, _ = generate_text(
+                    rewrite, _ = safe_generate_text(
                         client,
                         model,
                         rewrite_prompt(
@@ -3234,7 +3242,7 @@ def main() -> None:
                 key="classic_final_editor",
             ):
                 with st.spinner("Final editor is polishing the magazine-ready version..."):
-                    final_article, _ = generate_text(
+                    final_article, _ = safe_generate_text(
                         client,
                         model,
                         final_editor_prompt(
@@ -3327,7 +3335,7 @@ def main() -> None:
                     story_topic_hint,
                     story_search_details,
                 )
-                research, sources = generate_text(
+                research, sources = safe_generate_text(
                     client,
                     research_model,
                     prompt,
@@ -3397,7 +3405,7 @@ def main() -> None:
                             story_selected_context,
                             verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
-                        article, sources = generate_text(
+                        article, sources = safe_generate_text(
                             client,
                             model,
                             prompt,
@@ -3449,7 +3457,7 @@ def main() -> None:
 
             if story_review_clicked:
                 with st.spinner("Reviewing Tab 2 article quality..."):
-                    review, _ = generate_text(
+                    review, _ = safe_generate_text(
                         client,
                         review_model,
                         review_prompt(
@@ -3465,7 +3473,7 @@ def main() -> None:
 
             if story_rewrite_clicked:
                 with st.spinner("Rewriting with the attached prompt style..."):
-                    rewrite, _ = generate_text(
+                    rewrite, _ = safe_generate_text(
                         client,
                         model,
                         story_rewrite_prompt(
@@ -3516,7 +3524,7 @@ def main() -> None:
                 key="story_final_editor_button",
             ):
                 with st.spinner("Final editor is polishing the Tab 2 article..."):
-                    final_article, _ = generate_text(
+                    final_article, _ = safe_generate_text(
                         client,
                         model,
                         story_final_editor_prompt(
@@ -3628,7 +3636,7 @@ def main() -> None:
                     wisdom_target_magazine,
                     wisdom_search_details,
                 )
-                research, sources = generate_text(
+                research, sources = safe_generate_text(
                     client,
                     research_model,
                     prompt,
@@ -3701,7 +3709,7 @@ def main() -> None:
                             wisdom_selected_context,
                             verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
-                        article, sources = generate_text(
+                        article, sources = safe_generate_text(
                             client,
                             model,
                             prompt,
@@ -3753,7 +3761,7 @@ def main() -> None:
 
             if wisdom_review_clicked:
                 with st.spinner("Reviewing Tab 3 article quality..."):
-                    review, _ = generate_text(
+                    review, _ = safe_generate_text(
                         client,
                         review_model,
                         review_prompt(
@@ -3769,7 +3777,7 @@ def main() -> None:
 
             if wisdom_rewrite_clicked:
                 with st.spinner("Rewriting with the observation-first master prompt..."):
-                    rewrite, _ = generate_text(
+                    rewrite, _ = safe_generate_text(
                         client,
                         model,
                         farm_wisdom_rewrite_prompt(
@@ -3821,7 +3829,7 @@ def main() -> None:
                 key="wisdom_final_editor_button",
             ):
                 with st.spinner("Final editor is polishing the Tab 3 article..."):
-                    final_article, _ = generate_text(
+                    final_article, _ = safe_generate_text(
                         client,
                         model,
                         farm_wisdom_final_editor_prompt(
@@ -3934,7 +3942,7 @@ def main() -> None:
                     discovery_target_magazine,
                     discovery_search_details,
                 )
-                research, sources = generate_text(
+                research, sources = safe_generate_text(
                     client,
                     research_model,
                     prompt,
@@ -4007,7 +4015,7 @@ def main() -> None:
                             discovery_selected_context,
                             verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
-                        article, sources = generate_text(
+                        article, sources = safe_generate_text(
                             client,
                             model,
                             prompt,
@@ -4059,7 +4067,7 @@ def main() -> None:
 
             if discovery_review_clicked:
                 with st.spinner("Reviewing Tab 4 article quality..."):
-                    review, _ = generate_text(
+                    review, _ = safe_generate_text(
                         client,
                         review_model,
                         review_prompt(
@@ -4075,7 +4083,7 @@ def main() -> None:
 
             if discovery_rewrite_clicked:
                 with st.spinner("Rewriting with the field-discovery master prompt..."):
-                    rewrite, _ = generate_text(
+                    rewrite, _ = safe_generate_text(
                         client,
                         model,
                         field_discovery_rewrite_prompt(
@@ -4127,7 +4135,7 @@ def main() -> None:
                 key="discovery_final_editor_button",
             ):
                 with st.spinner("Final editor is polishing the Tab 4 article..."):
-                    final_article, _ = generate_text(
+                    final_article, _ = safe_generate_text(
                         client,
                         model,
                         field_discovery_final_editor_prompt(
@@ -4247,7 +4255,7 @@ def main() -> None:
                     engagement_target_magazine,
                     engagement_search_details,
                 )
-                research, sources = generate_text(
+                research, sources = safe_generate_text(
                     client,
                     research_model,
                     prompt,
@@ -4324,7 +4332,7 @@ def main() -> None:
                             engagement_selected_context,
                             verified_label_claim_chemicals=verified_label_claim_chemicals,
                         )
-                        article, sources = generate_text(
+                        article, sources = safe_generate_text(
                             client,
                             model,
                             prompt,
@@ -4376,7 +4384,7 @@ def main() -> None:
 
             if engagement_review_clicked:
                 with st.spinner("Reviewing Tab 5 article quality..."):
-                    review, _ = generate_text(
+                    review, _ = safe_generate_text(
                         client,
                         review_model,
                         review_prompt(
@@ -4392,7 +4400,7 @@ def main() -> None:
 
             if engagement_rewrite_clicked:
                 with st.spinner("Rewriting with the farmer-engagement master prompt..."):
-                    rewrite, _ = generate_text(
+                    rewrite, _ = safe_generate_text(
                         client,
                         model,
                         farmer_engagement_rewrite_prompt(
@@ -4444,7 +4452,7 @@ def main() -> None:
                 key="engagement_final_editor_button",
             ):
                 with st.spinner("Final editor is polishing the Tab 5 article..."):
-                    final_article, _ = generate_text(
+                    final_article, _ = safe_generate_text(
                         client,
                         model,
                         farmer_engagement_final_editor_prompt(
