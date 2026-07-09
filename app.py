@@ -874,6 +874,187 @@ def auto_select_label_claims(matched_df, limit: int = 4) -> list[int]:
     return selected
 
 
+AGRESCO_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agresco_recommendations.json")
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def load_agresco_recommendations() -> list[dict]:
+    """Load the pre-extracted Gujarat SAU (AGRESCO) farmer recommendations."""
+    try:
+        import json
+
+        with open(AGRESCO_JSON_PATH, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) else []
+    except (FileNotFoundError, ValueError):
+        return []
+
+
+def _agresco_haystack(rec: dict) -> str:
+    return " ".join(
+        [
+            rec.get("title", ""),
+            rec.get("crop", ""),
+            rec.get("pest", ""),
+            rec.get("recommendation_en", ""),
+        ]
+    ).lower()
+
+
+def search_agresco_recommendations(records, crop, pest, limit: int = 4) -> list[dict]:
+    """Rank official AGRESCO recommendations by relevance to crop and pest."""
+    crop_norm = normalize_crop_name(crop)
+    pest_norm = normalize_pest_name(pest)
+    crop_tokens = [tok for tok in crop_norm.split() if len(tok) >= 3]
+    pest_tokens = [tok for tok in pest_norm.split() if len(tok) >= 3]
+    if not crop_tokens and not pest_tokens:
+        return []
+
+    # Prefer specific words (e.g. "armyworm") over generic ones (e.g. "fall")
+    # so an exact pest match outranks an incidental word hit.
+    pest_significant = [tok for tok in pest_tokens if len(tok) >= 5] or pest_tokens
+
+    scored = []
+    for rec in records or []:
+        hay = _agresco_haystack(rec)
+        if not hay.strip():
+            continue
+        crop_hit = any(tok in hay for tok in crop_tokens)
+        pest_hit = any(tok in hay for tok in pest_significant)
+        fuzzy = 0
+        if fuzz and not (crop_hit and pest_hit):
+            target = " ".join(crop_tokens + pest_tokens)
+            if target:
+                fuzzy = fuzz.partial_ratio(target, hay)
+
+        score = 0
+        if crop_hit and pest_hit:
+            score = 100
+        elif crop_hit and not pest_tokens:
+            score = 70
+        elif pest_hit and not crop_tokens:
+            score = 60
+        elif crop_hit or pest_hit:
+            score = 45
+        elif fuzzy >= 80:
+            score = 30
+        if score:
+            # Prefer plant protection / horticulture entries with a dose.
+            if re.search(r"\d", rec.get("recommendation_en", "")):
+                score += 5
+            scored.append((score, rec))
+
+    scored.sort(key=lambda item: -item[0])
+    return [rec for _, rec in scored[:limit]]
+
+
+def format_agresco_for_prompt(selected) -> str:
+    records = list(selected or [])
+    if not records:
+        return ""
+
+    lines = [
+        "OFFICIAL_GUJARAT_UNIVERSITY_RECOMMENDATIONS (AGRESCO):",
+        "These are approved farmer recommendations from Gujarat State Agricultural",
+        "Universities (AGRESCO proceedings). They are verified and may be used and",
+        "referred to in the article. Use the English recommendation for technical",
+        "accuracy and write natural fresh Gujarati; do not copy raw extracted text.",
+    ]
+    for index, rec in enumerate(records, start=1):
+        meta = ", ".join(
+            filter(
+                None,
+                [
+                    rec.get("year", ""),
+                    rec.get("university", ""),
+                    rec.get("section", ""),
+                ],
+            )
+        )
+        recommendation = rec.get("recommendation_en", "") or rec.get("title", "")
+        lines.append(
+            "\n".join(
+                [
+                    f"{index}. [{meta}] {rec.get('title', '')}".rstrip(),
+                    f"   Recommendation: {recommendation}",
+                    f"   Source: {rec.get('source_file', '')}, page {rec.get('source_page', '')}",
+                ]
+            )
+        )
+    return "\n".join(lines).strip()
+
+
+def with_reference_recommendations(context: str, agresco_block: str) -> str:
+    """Append official AGRESCO recommendations to the article research context."""
+    context = context or ""
+    if not agresco_block:
+        return context
+    return f"{context}\n\n{agresco_block}".strip()
+
+
+def render_agresco_recommendation_helper(crop_default: str = "", pest_default: str = "") -> str:
+    records = load_agresco_recommendations()
+    st.session_state.setdefault("agresco_block", "")
+
+    with st.expander("Gujarat University Recommendations (AGRESCO)", expanded=False):
+        if not records:
+            st.info(
+                "No AGRESCO recommendations file found. Add "
+                "agresco_recommendations.json to the app to enable official "
+                "Gujarat university recommendations."
+            )
+            st.session_state["agresco_block"] = ""
+            return ""
+
+        years = sorted({rec.get("year", "") for rec in records if rec.get("year")})
+        st.caption(
+            f"{len(records)} official Gujarat SAU farmer recommendations loaded"
+            + (f" (years: {', '.join(years)})." if years else ".")
+        )
+        col_crop, col_pest = st.columns(2)
+        with col_crop:
+            crop_query = st.text_input(
+                "Crop for university recommendation search",
+                value=crop_default,
+                key="agresco_crop_query",
+            )
+        with col_pest:
+            pest_query = st.text_input(
+                "Pest / problem for university recommendation search",
+                value=pest_default,
+                placeholder="Example: whitefly, fruit borer, mites, wilt",
+                key="agresco_pest_query",
+            )
+
+        if st.button("Find official university recommendations", key="agresco_search"):
+            matches = search_agresco_recommendations(records, crop_query, pest_query)
+            st.session_state["agresco_matches"] = matches
+            st.session_state["agresco_block"] = format_agresco_for_prompt(matches)
+
+        matches = st.session_state.get("agresco_matches", [])
+        if matches:
+            st.success(
+                f"{len(matches)} official recommendation(s) will be shared with the "
+                "article as trusted Gujarat university guidance."
+            )
+            for rec in matches:
+                meta = ", ".join(
+                    filter(None, [rec.get("year", ""), rec.get("university", ""), rec.get("section", "")])
+                )
+                st.markdown(f"**{rec.get('title', '')}**  \n*{meta} — page {rec.get('source_page', '')}*")
+                if rec.get("recommendation_en"):
+                    st.write(rec["recommendation_en"])
+                if rec.get("recommendation_gu"):
+                    st.caption("Gujarati (raw extract for reference): " + rec["recommendation_gu"])
+        elif "agresco_matches" in st.session_state:
+            st.info(
+                "No matching university recommendation found for this crop/problem. "
+                "The article will still use your other research."
+            )
+
+    return st.session_state.get("agresco_block", "")
+
+
 def format_verified_chemicals_for_prompt(selected_rows) -> str:
     if selected_rows is None:
         return ""
@@ -3256,6 +3437,7 @@ def main() -> None:
     )
     article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=1)
     verified_label_claim_chemicals = render_ppqs_label_claim_checker(crop_focus)
+    agresco_block = render_agresco_recommendation_helper(crop_focus)
 
     client = build_client(api_keys[PROVIDER_GEMINI])
     tab_classic, tab_story, tab_farm_wisdom, tab_field_discovery, tab_farmer_engagement = st.tabs(
@@ -3339,6 +3521,7 @@ def main() -> None:
                         st.session_state.get("classic_saved_manual_title", ""),
                         st.session_state.get("classic_saved_search_details", ""),
                     )
+                    selected_topic = with_reference_recommendations(selected_topic, agresco_block)
                     with st.spinner("Writing the Gujarati article draft..."):
                         prompt = article_prompt(
                             month,
@@ -3611,6 +3794,9 @@ def main() -> None:
                         story_research_notes,
                         st.session_state.get("story_saved_topic_hint", ""),
                         st.session_state.get("story_saved_search_details", ""),
+                    )
+                    story_selected_context = with_reference_recommendations(
+                        story_selected_context, agresco_block
                     )
                     with st.spinner("Writing the article using the attached prompt style..."):
                         prompt = story_article_prompt(
@@ -3914,6 +4100,9 @@ def main() -> None:
                         wisdom_research_notes,
                         st.session_state.get("wisdom_saved_topic_hint", ""),
                         st.session_state.get("wisdom_saved_search_details", ""),
+                    )
+                    wisdom_selected_context = with_reference_recommendations(
+                        wisdom_selected_context, agresco_block
                     )
                     with st.spinner("Writing the article using the observation-first master prompt..."):
                         prompt = farm_wisdom_article_prompt(
@@ -4220,6 +4409,9 @@ def main() -> None:
                         discovery_research_notes,
                         st.session_state.get("discovery_saved_topic_hint", ""),
                         st.session_state.get("discovery_saved_search_details", ""),
+                    )
+                    discovery_selected_context = with_reference_recommendations(
+                        discovery_selected_context, agresco_block
                     )
                     with st.spinner("Writing the article using the field-discovery master prompt..."):
                         prompt = field_discovery_article_prompt(
@@ -4537,6 +4729,9 @@ def main() -> None:
                         engagement_research_notes,
                         st.session_state.get("engagement_saved_topic_hint", ""),
                         st.session_state.get("engagement_saved_search_details", ""),
+                    )
+                    engagement_selected_context = with_reference_recommendations(
+                        engagement_selected_context, agresco_block
                     )
                     with st.spinner("Writing the farmer-engagement article..."):
                         prompt = farmer_engagement_article_prompt(
