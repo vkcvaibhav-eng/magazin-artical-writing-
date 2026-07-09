@@ -23,7 +23,7 @@
         {"crop": "Cumin (jeera)", "regions": ["North Gujarat", "Saurashtra", "Kutch"], "stage": "Flowering to seed set", "pests": ["Aphids"], "diseases": ["Alternaria blight", "Powdery mildew"], "operations": "Blight and powdery mildew sprays are most critical now"},
         {"crop": "Mango", "regions": ["South Gujarat", "Saurashtra"], "stage": "Flowering to fruit set", "pests": ["Hopper", "Thrips", "Blossom midge"], "diseases": ["Powdery mildew", "Anthracnose"], "operations": "Protect flowering and fruit set from hopper and powdery mildew"},
         {"crop": "Mustard", "regions": ["North Gujarat", "Saurashtra"], "stage": "Siliqua to maturity", "pests": ["Aphids"], "diseases": ["Alternaria blight"], "operations": "Harvest planning"},
-        {"crop": "Summer groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Sowing (late February)", "pests": ["Thrips", "Leaf miner"], "diseases": ["Collar rot"], "operations": "Seed treatment, light frequent irrigation"},
+        {"crop": "Summer groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Sowing (late February)", "pests": ["Thrips", "Leaf miner"], "diseases": ["Collar rot"], "operations": "Seed treatment, light frequent irrigation"},
         {"crop": "Sugarcane", "regions": ["South Gujarat", "Central Gujarat"], "stage": "Planting", "pests": ["Early shoot borer", "Termite"], "diseases": ["Sett rot"], "operations": "Sett treatment before planting"}
       ]
     },
@@ -31,7 +31,7 @@
       "season": "Summer onset / Rabi harvest",
       "weather": "Rising temperature and dry air; sucking pests and mites begin to build on vegetables.",
       "crops": [
-        {"crop": "Summer groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Germination to vegetative", "pests": ["Leaf miner", "Thrips", "Jassids"], "diseases": ["Tikka leaf spot", "Collar rot"], "operations": "Light frequent irrigation, leaf miner watch"},
+        {"crop": "Summer groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Germination to vegetative", "pests": ["Leaf miner", "Thrips", "Jassids"], "diseases": ["Tikka leaf spot", "Collar rot"], "operations": "Light frequent irrigation, leaf miner watch"},
         {"crop": "Summer green gram (mung)", "regions": ["All"], "stage": "Sowing to vegetative", "pests": ["Thrips", "Whitefly (YMV vector)"], "diseases": ["Yellow mosaic"], "operations": "Whitefly monitoring for yellow mosaic"},
         {"crop": "Mango", "regions": ["South Gujarat", "Saurashtra"], "stage": "Fruit development (pea to marble)", "pests": ["Mealybug", "Hopper", "Fruit fly (building)"], "diseases": ["Anthracnose", "Powdery mildew"], "operations": "Fruit fly trap setup, hopper management"},
         {"crop": "Vegetables (okra, brinjal, chilli)", "regions": ["All"], "stage": "Summer crop vegetative", "pests": ["Whitefly", "Thrips", "Mites", "Fruit borer"], "diseases": ["Leaf curl (viral)"], "operations": "Sucking pest and mite monitoring as heat rises"},
@@ -42,7 +42,7 @@
       "season": "Summer (hot, dry)",
       "weather": "Hot and dry; mite and sucking-pest pressure peaks on vegetables; irrigation stress.",
       "crops": [
-        {"crop": "Summer groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Flowering to pegging", "pests": ["Leaf miner", "Thrips", "Red hairy caterpillar"], "diseases": ["Tikka leaf spot", "Stem rot"], "operations": "Irrigation at flowering/pegging, leaf miner control"},
+        {"crop": "Summer groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Flowering to pegging", "pests": ["Leaf miner", "Thrips", "Red hairy caterpillar"], "diseases": ["Tikka leaf spot", "Stem rot"], "operations": "Irrigation at flowering/pegging, leaf miner control"},
         {"crop": "Vegetables (okra, brinjal, chilli)", "regions": ["All"], "stage": "Fruiting", "pests": ["Mites (peak)", "Whitefly", "Thrips", "Aphids", "Fruit borer"], "diseases": ["Leaf curl (viral)"], "operations": "Mite and sucking-pest management is the main summer issue"},
         {"crop": "Cucurbits", "regions": ["All"], "stage": "Fruiting", "pests": ["Fruit fly", "Red pumpkin beetle"], "diseases": ["Powdery mildew"], "operations": "Fruit fly traps, bait application"},
         {"crop": "Mango", "regions": ["South Gujarat", "Saurashtra"], "stage": "Fruit maturity development", "pests": ["Fruit fly (rising)", "Stone weevil", "Mealybug"], "diseases": ["Anthracnose"], "operations": "Fruit fly trapping, pre-harvest care"},
@@ -53,7 +53,7 @@
       "season": "Peak summer / pre-monsoon",
       "weather": "Very hot; pre-monsoon land preparation; mite and thrips peak; nursery raising begins.",
       "crops": [
-        {"crop": "Summer groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Pod development to maturity", "pests": ["Leaf miner", "Spodoptera"], "diseases": ["Tikka leaf spot", "Rust"], "operations": "Harvest planning, leaf spot management"},
+        {"crop": "Summer groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Pod development to maturity", "pests": ["Leaf miner", "Spodoptera"], "diseases": ["Tikka leaf spot", "Rust"], "operations": "Harvest planning, leaf spot management"},
         {"crop": "Mango", "regions": ["South Gujarat", "Saurashtra"], "stage": "Harvest (Kesar, Alphonso)", "pests": ["Fruit fly"], "diseases": ["Anthracnose (post-harvest)"], "operations": "Timely harvest, post-harvest anthracnose care"},
         {"crop": "Vegetables", "regions": ["All"], "stage": "Fruiting / nursery", "pests": ["Mites (peak)", "Thrips", "Whitefly"], "diseases": ["Damping off (nursery)"], "operations": "Chilli, brinjal and tomato nursery raising; nursery disease care"},
         {"crop": "Land preparation (Kharif)", "regions": ["All"], "stage": "Summer ploughing", "pests": ["Soil pests (white grub, termite)"], "diseases": [], "operations": "Deep summer ploughing to expose soil pests and weeds"},
@@ -64,10 +64,10 @@
       "season": "Monsoon onset / Kharif sowing",
       "weather": "Monsoon arrival; sowing rains; white grub emergence at first showers; seedling diseases.",
       "crops": [
-        {"crop": "Cotton", "regions": ["Saurashtra", "North Gujarat", "Central Gujarat"], "stage": "Sowing to germination", "pests": ["Aphids", "Jassids", "Thrips", "Whitefly"], "diseases": ["Seedling blight", "Root rot"], "operations": "Sowing with monsoon, gap filling, early sucking-pest watch"},
-        {"crop": "Groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Sowing to germination", "pests": ["White grub (major at onset)", "Aphids", "Thrips", "Leaf miner"], "diseases": ["Collar rot", "Stem rot"], "operations": "Seed treatment, white grub management at first rains"},
+        {"crop": "Cotton", "regions": ["Saurashtra", "Central Gujarat", "South Gujarat", "North Gujarat"], "stage": "Sowing to germination", "pests": ["Aphids", "Jassids", "Thrips", "Whitefly"], "diseases": ["Seedling blight", "Root rot"], "operations": "Sowing with monsoon, gap filling, early sucking-pest watch"},
+        {"crop": "Groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Sowing to germination", "pests": ["White grub (major at onset)", "Aphids", "Thrips", "Leaf miner"], "diseases": ["Collar rot", "Stem rot"], "operations": "Seed treatment, white grub management at first rains"},
         {"crop": "Pearl millet (bajra)", "regions": ["North Gujarat", "Saurashtra", "Kutch"], "stage": "Sowing", "pests": ["Shoot fly"], "diseases": ["Downy mildew (green ear)"], "operations": "Seed treatment for downy mildew"},
-        {"crop": "Maize", "regions": ["Central Gujarat", "South Gujarat"], "stage": "Sowing to seedling", "pests": ["Fall armyworm (critical)", "Stem borer"], "diseases": [], "operations": "Early fall armyworm scouting"},
+        {"crop": "Maize", "regions": ["North Gujarat", "Central Gujarat"], "stage": "Sowing to seedling", "pests": ["Fall armyworm (critical)", "Stem borer"], "diseases": [], "operations": "Early fall armyworm scouting"},
         {"crop": "Paddy (rice)", "regions": ["South Gujarat", "Central Gujarat"], "stage": "Nursery raising", "pests": ["Stem borer", "Case worm"], "diseases": ["Blast"], "operations": "Healthy nursery, seed treatment"},
         {"crop": "Pigeon pea (tuvar)", "regions": ["All"], "stage": "Sowing", "pests": [], "diseases": ["Wilt"], "operations": "Sowing with recommended spacing"}
       ]
@@ -76,9 +76,9 @@
       "season": "Kharif established (monsoon)",
       "weather": "Active monsoon, humid; rapid crop growth; sucking pests and fall armyworm active; weed flush.",
       "crops": [
-        {"crop": "Cotton", "regions": ["Saurashtra", "North Gujarat", "Central Gujarat"], "stage": "Early vegetative to squaring", "pests": ["Aphids", "Jassids", "Thrips", "Whitefly", "Mites"], "diseases": ["Leaf curl virus (whitefly-borne)"], "operations": "Weeding, thinning, first nitrogen dose, sucking-pest and leaf-curl watch"},
-        {"crop": "Groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Vegetative", "pests": ["Leaf miner", "Thrips", "Aphids", "White grub"], "diseases": ["Tikka leaf spot (begins)", "Stem rot"], "operations": "Intercultural operations, leaf miner and leaf spot monitoring"},
-        {"crop": "Maize", "regions": ["Central Gujarat", "South Gujarat"], "stage": "Vegetative", "pests": ["Fall armyworm (major)", "Stem borer"], "diseases": ["Turcicum leaf blight"], "operations": "Fall armyworm scouting and need-based management"},
+        {"crop": "Cotton", "regions": ["Saurashtra", "Central Gujarat", "South Gujarat", "North Gujarat"], "stage": "Early vegetative to squaring", "pests": ["Aphids", "Jassids", "Thrips", "Whitefly", "Mites"], "diseases": ["Leaf curl virus (whitefly-borne)"], "operations": "Weeding, thinning, first nitrogen dose, sucking-pest and leaf-curl watch"},
+        {"crop": "Groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Vegetative", "pests": ["Leaf miner", "Thrips", "Aphids", "White grub"], "diseases": ["Tikka leaf spot (begins)", "Stem rot"], "operations": "Intercultural operations, leaf miner and leaf spot monitoring"},
+        {"crop": "Maize", "regions": ["North Gujarat", "Central Gujarat"], "stage": "Vegetative", "pests": ["Fall armyworm (major)", "Stem borer"], "diseases": ["Turcicum leaf blight"], "operations": "Fall armyworm scouting and need-based management"},
         {"crop": "Paddy (rice)", "regions": ["South Gujarat", "Central Gujarat"], "stage": "Transplanting", "pests": ["Stem borer", "Leaf folder"], "diseases": ["Blast", "Bacterial leaf blight"], "operations": "Transplanting, weed management, blast watch"},
         {"crop": "Green gram / black gram", "regions": ["All"], "stage": "Vegetative to flowering", "pests": ["Whitefly (YMV vector)", "Thrips", "Pod borer"], "diseases": ["Yellow mosaic"], "operations": "Whitefly control to check yellow mosaic"},
         {"crop": "Okra (bhindi)", "regions": ["All"], "stage": "Vegetative to flowering", "pests": ["Jassids", "Whitefly", "Fruit borer"], "diseases": ["Yellow vein mosaic (YVMV)"], "operations": "Sucking-pest and YVMV management"},
@@ -89,10 +89,10 @@
       "season": "Mid-monsoon",
       "weather": "Humid, intermittent rain and dry spells; leaf spots, bollworms and mealybug build up.",
       "crops": [
-        {"crop": "Cotton", "regions": ["Saurashtra", "North Gujarat", "Central Gujarat"], "stage": "Squaring to flowering", "pests": ["Sucking pests", "Mealybug", "Mites", "Pink bollworm (early)"], "diseases": ["Bacterial blight", "Alternaria leaf spot"], "operations": "Pink bollworm pheromone traps, mealybug and sucking-pest watch"},
-        {"crop": "Groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Flowering to pegging", "pests": ["Leaf miner", "Spodoptera"], "diseases": ["Tikka & rust leaf spots", "Stem rot"], "operations": "Leaf spot management at pegging, avoid waterlogging"},
+        {"crop": "Cotton", "regions": ["Saurashtra", "Central Gujarat", "South Gujarat", "North Gujarat"], "stage": "Squaring to flowering", "pests": ["Sucking pests", "Mealybug", "Mites", "Pink bollworm (early)"], "diseases": ["Bacterial blight", "Alternaria leaf spot"], "operations": "Pink bollworm pheromone traps, mealybug and sucking-pest watch"},
+        {"crop": "Groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Flowering to pegging", "pests": ["Leaf miner", "Spodoptera"], "diseases": ["Tikka & rust leaf spots", "Stem rot"], "operations": "Leaf spot management at pegging, avoid waterlogging"},
         {"crop": "Paddy (rice)", "regions": ["South Gujarat", "Central Gujarat"], "stage": "Tillering", "pests": ["Stem borer", "Leaf folder", "Brown planthopper"], "diseases": ["Blast", "Sheath blight", "Bacterial leaf blight"], "operations": "Planthopper monitoring, balanced nitrogen"},
-        {"crop": "Maize", "regions": ["Central Gujarat", "South Gujarat"], "stage": "Tasseling", "pests": ["Fall armyworm", "Stem borer"], "diseases": ["Leaf blight"], "operations": "Cob-stage fall armyworm watch"},
+        {"crop": "Maize", "regions": ["North Gujarat", "Central Gujarat"], "stage": "Tasseling", "pests": ["Fall armyworm", "Stem borer"], "diseases": ["Leaf blight"], "operations": "Cob-stage fall armyworm watch"},
         {"crop": "Pigeon pea (tuvar)", "regions": ["All"], "stage": "Vegetative to flower initiation", "pests": [], "diseases": ["Wilt", "Sterility mosaic"], "operations": "Rogue wilt/sterility-mosaic affected plants"},
         {"crop": "Vegetables", "regions": ["All"], "stage": "Fruiting", "pests": ["Fruit borers", "Mites", "Whitefly"], "diseases": [], "operations": "Fruit borer and sucking-pest management"}
       ]
@@ -101,8 +101,8 @@
       "season": "Late monsoon / Kharif reproductive",
       "weather": "Reducing rain, humid; reproductive-stage pests (bollworms, pod borers) most damaging.",
       "crops": [
-        {"crop": "Cotton", "regions": ["Saurashtra", "North Gujarat", "Central Gujarat"], "stage": "Flowering to boll development", "pests": ["Pink bollworm (critical)", "Bollworms", "Sucking pests", "Mealybug"], "diseases": ["Boll rot", "Bacterial blight"], "operations": "Pink bollworm pheromone-trap based management, boll rot watch"},
-        {"crop": "Groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Pod development", "pests": ["Spodoptera", "Leaf miner"], "diseases": ["Tikka & rust (peak)", "Stem rot"], "operations": "Leaf spot management to protect pod filling"},
+        {"crop": "Cotton", "regions": ["Saurashtra", "Central Gujarat", "South Gujarat", "North Gujarat"], "stage": "Flowering to boll development", "pests": ["Pink bollworm (critical)", "Bollworms", "Sucking pests", "Mealybug"], "diseases": ["Boll rot", "Bacterial blight"], "operations": "Pink bollworm pheromone-trap based management, boll rot watch"},
+        {"crop": "Groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Pod development", "pests": ["Spodoptera", "Leaf miner"], "diseases": ["Tikka & rust (peak)", "Stem rot"], "operations": "Leaf spot management to protect pod filling"},
         {"crop": "Paddy (rice)", "regions": ["South Gujarat", "Central Gujarat"], "stage": "Panicle initiation to flowering", "pests": ["Stem borer (white ear)", "Brown planthopper", "Gundhi bug"], "diseases": ["Neck blast", "Bacterial leaf blight", "Sheath blight"], "operations": "Neck blast and planthopper watch at booting"},
         {"crop": "Pigeon pea (tuvar)", "regions": ["All"], "stage": "Flowering to early podding", "pests": ["Pod borer (Helicoverpa)", "Pod fly"], "diseases": ["Wilt", "Sterility mosaic"], "operations": "Pod borer monitoring with pheromone traps"},
         {"crop": "Castor", "regions": ["North Gujarat", "Saurashtra"], "stage": "Vegetative to spike", "pests": ["Semilooper", "Capsule borer"], "diseases": ["Wilt"], "operations": "Semilooper management before spike"}
@@ -112,8 +112,8 @@
       "season": "Kharif harvest / Rabi preparation",
       "weather": "Retreating monsoon, clear warm days; harvest and Rabi sowing overlap.",
       "crops": [
-        {"crop": "Cotton", "regions": ["Saurashtra", "North Gujarat", "Central Gujarat"], "stage": "Boll bursting to picking", "pests": ["Pink bollworm", "Whitefly", "Mealybug"], "diseases": [], "operations": "Clean picking, pink bollworm sanitation"},
-        {"crop": "Groundnut", "regions": ["Saurashtra", "South Gujarat"], "stage": "Maturity to harvest", "pests": ["Spodoptera"], "diseases": ["Stem rot", "Aflatoxin (storage)"], "operations": "Timely harvest and proper drying to avoid aflatoxin"},
+        {"crop": "Cotton", "regions": ["Saurashtra", "Central Gujarat", "South Gujarat", "North Gujarat"], "stage": "Boll bursting to picking", "pests": ["Pink bollworm", "Whitefly", "Mealybug"], "diseases": [], "operations": "Clean picking, pink bollworm sanitation"},
+        {"crop": "Groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Maturity to harvest", "pests": ["Spodoptera"], "diseases": ["Stem rot", "Aflatoxin (storage)"], "operations": "Timely harvest and proper drying to avoid aflatoxin"},
         {"crop": "Paddy (rice)", "regions": ["South Gujarat", "Central Gujarat"], "stage": "Maturity to harvest", "pests": ["Stem borer"], "diseases": [], "operations": "Harvest at right moisture"},
         {"crop": "Pigeon pea (tuvar)", "regions": ["All"], "stage": "Podding", "pests": ["Pod borer", "Pod fly"], "diseases": ["Wilt"], "operations": "Pod borer/pod fly management"},
         {"crop": "Cumin / mustard / chickpea", "regions": ["North Gujarat", "Saurashtra", "Kutch"], "stage": "Rabi sowing preparation", "pests": [], "diseases": [], "operations": "Field preparation and timely Rabi sowing"}
