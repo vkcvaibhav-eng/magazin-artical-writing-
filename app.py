@@ -610,9 +610,12 @@ def _row_from_cells(cells: list[str], current_pesticide: dict, source_file: str,
 
 
 def extract_label_claim_rows_from_pdf(uploaded_file) -> "pd.DataFrame":
-    _require_ppqs_dependencies()
     source_file = getattr(uploaded_file, "name", "uploaded_ppqs_major_uses.pdf")
-    pdf_bytes = uploaded_file.getvalue()
+    return extract_label_claim_rows_from_bytes(uploaded_file.getvalue(), source_file)
+
+
+def extract_label_claim_rows_from_bytes(pdf_bytes: bytes, source_file: str) -> "pd.DataFrame":
+    _require_ppqs_dependencies()
     rows = []
 
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
@@ -680,6 +683,77 @@ def parse_ppqs_pdf(uploaded_file) -> "pd.DataFrame":
     return extract_label_claim_rows_from_pdf(uploaded_file)
 
 
+PPQS_MAJOR_USES_PAGE = "https://ppqs.gov.in/divisions/cib-rc/major-uses-of-pesticides"
+PPQS_REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+}
+
+
+def _ppqs_get(url: str, timeout: int) -> requests.Response:
+    try:
+        response = requests.get(url, headers=PPQS_REQUEST_HEADERS, timeout=timeout)
+    except requests.exceptions.SSLError:
+        # Some government servers ship incomplete certificate chains.
+        response = requests.get(
+            url, headers=PPQS_REQUEST_HEADERS, timeout=timeout, verify=False
+        )
+    response.raise_for_status()
+    return response
+
+
+def _ppqs_absolute_url(href: str) -> str:
+    return href if href.lower().startswith("http") else "https://ppqs.gov.in" + href
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def fetch_ppqs_document_list() -> list[dict[str, str]]:
+    html = _ppqs_get(PPQS_MAJOR_USES_PAGE, timeout=60).text
+    documents = []
+    seen = set()
+
+    # The download links sit in table rows whose text carries the document title.
+    for row_match in re.finditer(r"<tr[^>]*>(.*?)</tr>", html, re.IGNORECASE | re.DOTALL):
+        row_html = row_match.group(1)
+        link = re.search(r'href="([^"]+\.pdf[^"]*)"', row_html, re.IGNORECASE)
+        if not link:
+            continue
+        url = _ppqs_absolute_url(link.group(1))
+        text = re.sub(r"<[^>]+>", " ", row_html)
+        text = re.sub(r"\s+", " ", text).strip()
+        title = re.sub(r"\b(download|view)\b", "", text, flags=re.IGNORECASE)
+        title = re.sub(r"^\s*\d+\s*[.)]?\s*", "", title).strip(" -|:")
+        if not title:
+            title = url.rsplit("/", 1)[-1]
+        if "major uses" not in title.lower() and "mup" not in url.lower():
+            continue
+        if url not in seen:
+            seen.add(url)
+            documents.append({"title": title, "url": url})
+
+    if documents:
+        return documents
+
+    # Fallback if the page stops using tables: take every PDF link, name by file.
+    for match in re.finditer(r'href="([^"]+\.pdf[^"]*)"', html, re.IGNORECASE):
+        url = _ppqs_absolute_url(match.group(1))
+        if "mup" not in url.lower():
+            continue
+        if url not in seen:
+            seen.add(url)
+            documents.append({"title": url.rsplit("/", 1)[-1], "url": url})
+    return documents
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False, max_entries=6)
+def download_and_parse_ppqs_pdf(url: str, title: str) -> "pd.DataFrame":
+    pdf_bytes = _ppqs_get(url, timeout=300).content
+    source_name = title or url.rsplit("/", 1)[-1]
+    return extract_label_claim_rows_from_bytes(pdf_bytes, source_name)
+
+
 def _keyword_overlap(query: str, value: str) -> bool:
     query_tokens = {token for token in normalize_pest_name(query).split() if len(token) >= 3}
     value_tokens = {token for token in normalize_pest_name(value).split() if len(token) >= 3}
@@ -701,8 +775,12 @@ def search_label_claims(df, crop_query, pest_query) -> "pd.DataFrame":
     for index, row in work.iterrows():
         row_crop = row["_crop_norm"]
         row_pest = row["_pest_norm"]
-        exact_crop = bool(crop_norm and (crop_norm == row_crop or crop_norm in row_crop or row_crop in crop_norm))
-        exact_pest = bool(pest_norm and (pest_norm == row_pest or pest_norm in row_pest or row_pest in pest_norm))
+        exact_crop = bool(
+            crop_norm and row_crop and (crop_norm == row_crop or crop_norm in row_crop or row_crop in crop_norm)
+        )
+        exact_pest = bool(
+            pest_norm and row_pest and (pest_norm == row_pest or pest_norm in row_pest or row_pest in pest_norm)
+        )
         fuzzy_crop = bool(crop_norm and fuzz and fuzz.partial_ratio(crop_norm, row_crop) >= 82)
         fuzzy_pest = bool(pest_norm and fuzz and fuzz.partial_ratio(pest_norm, row_pest) >= 78)
         pest_overlap = bool(pest_norm and _keyword_overlap(pest_norm, row_pest))
@@ -2816,6 +2894,78 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
             )
             return st.session_state.get("verified_label_claim_chemicals", "")
 
+        st.markdown("**Option 1: Load directly from ppqs.gov.in**")
+        if st.button("Fetch Major Uses document list from PPQS website", key="ppqs_fetch_list"):
+            try:
+                with st.spinner("Reading the PPQS Major Uses page..."):
+                    st.session_state["ppqs_web_docs"] = fetch_ppqs_document_list()
+                if not st.session_state["ppqs_web_docs"]:
+                    st.warning(
+                        "No PDF links were found on the PPQS page. The page layout "
+                        "may have changed; upload the PDF manually below."
+                    )
+            except Exception as exc:
+                st.session_state["ppqs_web_docs"] = []
+                st.error(f"Could not read the PPQS website: {exc}")
+
+        web_docs = st.session_state.get("ppqs_web_docs") or []
+        if web_docs:
+            doc_titles = [doc["title"] for doc in web_docs]
+            default_docs = [
+                title
+                for title in doc_titles
+                if "insecticide" in title.lower() and "bio" not in title.lower()
+            ][:1]
+            selected_doc_titles = st.multiselect(
+                "PPQS documents to load (insecticides is usually enough)",
+                doc_titles,
+                default=default_docs,
+                key="ppqs_web_doc_choice",
+            )
+            if st.button("Download and parse selected PPQS documents", key="ppqs_web_parse"):
+                if not selected_doc_titles:
+                    st.info("Select at least one PPQS document to download.")
+                else:
+                    frames = []
+                    errors = []
+                    for doc in web_docs:
+                        if doc["title"] not in selected_doc_titles:
+                            continue
+                        try:
+                            with st.spinner(
+                                f"Downloading and parsing: {doc['title']} "
+                                "(large PDFs can take a few minutes)..."
+                            ):
+                                frames.append(
+                                    download_and_parse_ppqs_pdf(doc["url"], doc["title"])
+                                )
+                        except Exception as exc:
+                            errors.append(f"{doc['title']}: {exc}")
+                    parsed_df = (
+                        pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
+                        if frames
+                        else _empty_ppqs_df()
+                    )
+                    st.session_state["ppqs_label_df"] = parsed_df
+                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
+                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
+                    st.session_state["verified_label_claim_chemicals"] = ""
+                    st.session_state["ppqs_selected_indices"] = []
+                    st.session_state["ppqs_search_has_run"] = False
+                    for error in errors:
+                        st.error(f"Could not load {error}")
+                    if parsed_df.empty and not errors:
+                        st.warning(
+                            "No label-claim rows were extracted from the downloaded "
+                            "PDF(s). Try the manual upload with a cleaner copy."
+                        )
+                    elif not parsed_df.empty:
+                        st.success(
+                            f"Parsed {len(parsed_df)} label-claim rows from "
+                            f"{len(frames)} PPQS document(s)."
+                        )
+
+        st.markdown("**Option 2: Upload the PDF manually**")
         uploaded_file = st.file_uploader(
             "Upload latest PPQS/CIB&RC Major Uses PDF",
             type=["pdf"],
@@ -2866,7 +3016,10 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
         if isinstance(label_df, pd.DataFrame) and not label_df.empty:
             st.caption(f"Current parsed PPQS database: {len(label_df)} rows.")
         elif uploaded_file is None:
-            st.info("Upload and parse a PPQS/CIB&RC Major Uses PDF to enable chemical verification.")
+            st.info(
+                "Load the Major Uses list from the PPQS website above, or upload "
+                "and parse the PDF manually, to enable chemical verification."
+            )
 
         search_clicked = st.button(
             "Search Label Claim Pesticides",
