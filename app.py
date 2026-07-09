@@ -812,6 +812,68 @@ def search_label_claims(df, crop_query, pest_query) -> "pd.DataFrame":
     return result.reset_index(drop=True)
 
 
+def auto_select_label_claims(matched_df, limit: int = 4) -> list[int]:
+    """Pick the best label-claim rows so the user gets a safe default selection.
+
+    Prefers exact crop+pest matches, single-molecule products, rows with a
+    calculable spray dose and waiting period, and skips rows flagged for
+    manual verification. Returns at most `limit` rows, one per pesticide.
+    """
+    if matched_df is None or matched_df.empty:
+        return []
+
+    scored = []
+    for index, row in matched_df.iterrows():
+        name = clean_ppqs_text(row.get("pesticide_name", ""))
+        if not name:
+            continue
+        match_type = str(row.get("match_type", "")).lower()
+        remarks = str(row.get("remarks", "")).lower()
+        dose10 = str(row.get("dose_per_10_litre", "")).lower()
+        waiting = clean_ppqs_text(row.get("waiting_period_days", ""))
+
+        score = 0
+        if match_type.startswith("exact crop + exact pest"):
+            score += 100
+        elif match_type.startswith("exact crop"):
+            score += 60
+        elif match_type.startswith("fuzzy crop"):
+            score += 30
+        else:
+            score += 10
+        if "+" not in name:
+            score += 25
+        if dose10 and not dose10.startswith("not applicable"):
+            score += 20
+        if waiting and waiting != "-":
+            score += 10
+        if "manual verification" in remarks or "verify against pdf" in remarks:
+            score -= 40
+        scored.append((score, index, name.lower()))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+
+    selected = []
+    seen_names = set()
+    for score, index, name in scored:
+        if score < 100 or name in seen_names:
+            continue
+        seen_names.add(name)
+        selected.append(index)
+        if len(selected) >= limit:
+            break
+
+    if not selected:
+        for score, index, name in scored:
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+            selected.append(index)
+            if len(selected) >= 2:
+                break
+    return selected
+
+
 def format_verified_chemicals_for_prompt(selected_rows) -> str:
     if selected_rows is None:
         return ""
@@ -3036,7 +3098,7 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                     st.session_state["ppqs_matched_df"] = matched_df
                     st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
                     st.session_state["verified_label_claim_chemicals"] = ""
-                    st.session_state["ppqs_selected_indices"] = []
+                    st.session_state["ppqs_selected_indices"] = auto_select_label_claims(matched_df)
                     st.session_state["ppqs_search_has_run"] = True
                 except Exception as exc:
                     st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
@@ -3084,6 +3146,10 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                     f"{dose or label_dose} | page {row.get('source_page', '')}"
                 )
 
+            st.caption(
+                "The best label-claim matches are auto-selected for you. "
+                "Keep them as they are, or add/remove pesticides below."
+            )
             selected_indices = st.multiselect(
                 "Select pesticides allowed for the article",
                 options=options,
