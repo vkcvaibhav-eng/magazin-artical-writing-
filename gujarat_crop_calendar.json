@@ -76,7 +76,7 @@
       "season": "Kharif established (monsoon)",
       "weather": "Active monsoon, humid; rapid crop growth; sucking pests and fall armyworm active; weed flush.",
       "crops": [
-        {"crop": "Cotton", "regions": ["Saurashtra", "Central Gujarat", "South Gujarat", "North Gujarat"], "stage": "Early vegetative to squaring", "pests": ["Aphids", "Jassids", "Thrips", "Whitefly", "Mites"], "diseases": ["Leaf curl virus (whitefly-borne)"], "operations": "Weeding, thinning, first nitrogen dose, sucking-pest and leaf-curl watch"},
+        {"crop": "Cotton", "regions": ["Saurashtra", "Central Gujarat", "South Gujarat", "North Gujarat"], "stage": "Early vegetative to squaring", "pests": ["Aphids", "Jassids", "Thrips", "Whitefly", "Mites"], "diseases": ["Bacterial blight", "Leaf curl virus (whitefly-borne, mainly North Gujarat)"], "operations": "Weeding, thinning, first nitrogen dose, sucking-pest and leaf-curl watch"},
         {"crop": "Groundnut", "regions": ["Saurashtra", "North Gujarat"], "stage": "Vegetative", "pests": ["Leaf miner", "Thrips", "Aphids", "White grub"], "diseases": ["Tikka leaf spot (begins)", "Stem rot"], "operations": "Intercultural operations, leaf miner and leaf spot monitoring"},
         {"crop": "Maize", "regions": ["North Gujarat", "Central Gujarat"], "stage": "Vegetative", "pests": ["Fall armyworm (major)", "Stem borer"], "diseases": ["Turcicum leaf blight"], "operations": "Fall armyworm scouting and need-based management"},
         {"crop": "Paddy (rice)", "regions": ["South Gujarat", "Central Gujarat"], "stage": "Transplanting", "pests": ["Stem borer", "Leaf folder"], "diseases": ["Blast", "Bacterial leaf blight"], "operations": "Transplanting, weed management, blast watch"},
