@@ -684,12 +684,24 @@ def parse_ppqs_pdf(uploaded_file) -> "pd.DataFrame":
 
 
 PPQS_MAJOR_USES_PAGE = "https://ppqs.gov.in/divisions/cib-rc/major-uses-of-pesticides"
+# Full browser-like headers help pass simple WAF rules. They cannot bypass a
+# server-side block of the host's IP range (e.g. cloud/datacenter IPs), which
+# is why the shipped label cache exists as a fallback.
 PPQS_REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-IN,en;q=0.9,gu;q=0.8,hi;q=0.7",
+    "Referer": "https://ppqs.gov.in/",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
 }
+
+
+class PPQSBlockedError(RuntimeError):
+    """Raised when ppqs.gov.in refuses the request (e.g. 403 from a cloud IP)."""
 
 
 def _ppqs_get(url: str, timeout: int) -> requests.Response:
@@ -699,6 +711,12 @@ def _ppqs_get(url: str, timeout: int) -> requests.Response:
         # Some government servers ship incomplete certificate chains.
         response = requests.get(
             url, headers=PPQS_REQUEST_HEADERS, timeout=timeout, verify=False
+        )
+    if response.status_code in (401, 403, 429):
+        raise PPQSBlockedError(
+            f"ppqs.gov.in refused the request ({response.status_code}). This usually "
+            "means the government site is blocking the server's IP address, not a "
+            "problem with your app."
         )
     response.raise_for_status()
     return response
@@ -3343,6 +3361,18 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                         "No PDF links were found on the PPQS page. The page layout "
                         "may have changed; upload the PDF manually below."
                     )
+            except PPQSBlockedError:
+                st.session_state["ppqs_web_docs"] = []
+                cached_df, cache_meta = load_ppqs_label_cache()
+                as_of = cache_meta.get("fetched", "")
+                st.warning(
+                    "ppqs.gov.in is refusing requests from this server (a government "
+                    "firewall block, not an app problem). You do not need this button: "
+                    "the app already loaded saved label data"
+                    + (f" as of {as_of}" if as_of else "")
+                    + ". Just search by crop and pest below, or use Option 2 to upload "
+                    "a fresh PDF you downloaded in your own browser."
+                )
             except Exception as exc:
                 st.session_state["ppqs_web_docs"] = []
                 st.error(f"Could not read the PPQS website: {exc}")
