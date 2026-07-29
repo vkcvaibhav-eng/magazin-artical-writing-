@@ -122,6 +122,25 @@ MAGAZINE_STYLE_NOTES = {
     ),
 }
 
+NEWSPAPER_STYLE_NOTES = {
+    "Weekly Newspaper Advisory": (
+        "Direct, current, farmer-first weekly advisory with short paragraphs, "
+        "clear observations, practical action, and concise advisory boxes."
+    ),
+    "Farmer Alert Column": (
+        "Alert but calm seasonal warning focused on what farmers should observe "
+        "now, risk signs, field scouting, timely action, and mistakes to avoid."
+    ),
+    "Solution Desk Article": (
+        "Problem-solution newspaper column that explains the farmer's problem, "
+        "the reason briefly, practical safe solutions, and the farmer benefit."
+    ),
+    "Crop and Weather Watch": (
+        "Crop-stage and weather-linked weekly watch connecting field conditions, "
+        "crop stress, pest or mite risk, monitoring, and timely action."
+    ),
+}
+
 PROVIDER_GEMINI = "Gemini"
 PROVIDER_PERPLEXITY = "Perplexity"
 PROVIDER_OPENAI = "OpenAI"
@@ -2941,6 +2960,262 @@ checklist, editor notes, or comments.
 """.strip()
 
 
+def newspaper_research_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    topic_hint: str,
+    newspaper_style: str,
+    target_publication: str,
+    search_details: str = "",
+) -> str:
+    style_note = NEWSPAPER_STYLE_NOTES[newspaper_style]
+    return f"""
+You are an agricultural research assistant for a Gujarati weekly agriculture
+newspaper. Perform deep research before suggesting topics.
+
+Assignment:
+- Month: {month}
+- Region: {region}
+- Subject area: {subject_area}
+- Crop focus: {crop_focus or "Current season crops"}
+- Newspaper writing style: {newspaper_style}
+- Style requirements: {style_note}
+- Target publication: {target_publication or "Gujarati weekly agriculture newspaper"}
+- Topic hint: {topic_hint or "Find current ranked topic options; the user will choose one"}
+
+{manual_search_context(topic_hint, search_details)}
+
+{current_problem_research_guide(month, region)}
+
+Research priorities:
+- A current farmer problem relevant to this week, month, crop stage, and region.
+- Weather links such as heat, humidity, rain, dry wind, dust, irrigation stress,
+  or cloudy conditions where supported.
+- Symptoms and a simple field scouting or observation method.
+- Integrated pest management, natural enemies, prevention, and safe management.
+- One common farmer mistake and the practical benefit of avoiding it.
+- Official, government, university/KVK, research, weather, and credible news
+  signals, clearly distinguishing confirmed facts from seasonal possibilities.
+- Never invent a local outbreak, pesticide dose, quote, statistic, or official
+  advisory.
+
+Return 8 to 10 Gujarati newspaper topic options using the required TOPIC_OPTIONS
+format. Do not choose the final topic. Each option must be timely, farmer-first,
+and suitable for the selected newspaper style.
+
+After TOPIC_OPTIONS, provide a ranked evidence pack covering why the topic
+matters now, crop and weather context, field symptoms, scouting, safe practical
+action, farmer mistake, farmer benefit, verification needs, and source signals.
+The evidence pack is for drafting support; the final article must not contain
+inline citations or an academic reference list.
+""".strip()
+
+
+def newspaper_article_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    topic: str,
+    newspaper_style: str,
+    target_publication: str,
+    research_notes: str,
+    verified_label_claim_chemicals: str = "",
+) -> str:
+    style_note = NEWSPAPER_STYLE_NOTES[newspaper_style]
+    return f"""
+You are an experienced Gujarati weekly newspaper agriculture columnist.
+
+Write a publication-ready Gujarati agriculture newspaper article.
+
+Assignment:
+- Month: {month}
+- Region: {region}
+- Subject area: {subject_area}
+- Crop focus: {crop_focus or "Current season crops"}
+- Length: {article_length}
+- Topic: {topic}
+- Newspaper writing style: {newspaper_style}
+- Style requirements: {style_note}
+- Target publication: {target_publication or "Gujarati weekly agriculture newspaper"}
+
+Required newspaper structure:
+1. One strong, simple Gujarati headline.
+2. One short Gujarati subheadline.
+3. A timely farmer-oriented opening.
+4. Main article in short, readable newspaper paragraphs.
+5. A short box headed "આ અઠવાડિયે ખેડૂતે શું જોવું?"
+6. A short box headed "આ ભૂલો ટાળો".
+7. A short box headed "ખેડૂત માટે મુખ્ય સંદેશ".
+8. End with one concise practical takeaway.
+
+Writing rules:
+- Keep the article direct, current, useful, and farmer-first.
+- Briefly explain science in simple Gujarati after the field issue is clear.
+- Do not write a long magazine essay, research paper, review article,
+  university report, or slow philosophical feature.
+- Do not include inline citations, source lists, editor notes, or a checklist.
+- Do not invent outbreak claims, facts, figures, quotes, pesticide doses, or
+  scheme details.
+- When local evidence is uncertain, use cautious wording such as risk may
+  increase, farmers should observe carefully, or local expert guidance should
+  be followed.
+- If chemical control is mentioned, follow only the verified label-claim
+  information supplied below and advise following the product label and local
+  agricultural university, KVK, or agriculture expert guidance.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
+Deep research notes:
+{research_notes}
+
+Return only the complete Gujarati newspaper article.
+""".strip()
+
+
+def newspaper_review_prompt(
+    article: str,
+    newspaper_style: str,
+    target_publication: str,
+    article_length: str,
+) -> str:
+    return f"""
+Review the Gujarati agriculture newspaper article below for
+{target_publication or "a Gujarati weekly agriculture newspaper"}.
+
+Selected style: {newspaper_style}
+Style requirements: {NEWSPAPER_STYLE_NOTES[newspaper_style]}
+Target length: {article_length}
+
+Check:
+1. Is the headline simple, timely, and farmer-benefit oriented?
+2. Does the opening immediately establish the current farmer issue?
+3. Are paragraphs short and suitable for a newspaper column?
+4. Is the science brief, clear, and accurate?
+5. Are practical actions safe and useful?
+6. Are unsupported outbreak, weather, pesticide, or official claims avoided?
+7. Are all three advisory boxes present?
+8. Does the piece avoid magazine-essay, research-paper, and university-report style?
+9. Is the Gujarati natural and publication-ready?
+10. Is the article reasonably close to the selected word limit?
+
+Return a concise editorial review with specific improvements. Do not rewrite
+the article.
+
+Article:
+{article}
+""".strip()
+
+
+def newspaper_rewrite_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    topic: str,
+    newspaper_style: str,
+    target_publication: str,
+    research_notes: str,
+    article: str,
+    verified_label_claim_chemicals: str = "",
+) -> str:
+    return f"""
+Rewrite the following Gujarati article into a stronger weekly agriculture
+newspaper article.
+
+Keep the verified facts and selected topic, but improve:
+- Headline and subheadline.
+- Timely farmer-first opening.
+- Short newspaper paragraphs and direct Gujarati.
+- Clear crop, season, weather, symptom, scouting, and practical-action links.
+- Brief simple science and explicit farmer benefit.
+- Calm, cautious wording where local evidence is uncertain.
+- The selected newspaper style: {newspaper_style}.
+- Style requirements: {NEWSPAPER_STYLE_NOTES[newspaper_style]}
+- Three short boxes headed "આ અઠવાડિયે ખેડૂતે શું જોવું?", "આ ભૂલો ટાળો",
+  and "ખેડૂત માટે મુખ્ય સંદેશ".
+- One concise practical takeaway.
+
+Avoid a magazine essay, research paper, review article, university report,
+inline citations, source lists, unsupported local claims, and unsafe pesticide
+advice.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
+Target publication: {target_publication or "Gujarati weekly agriculture newspaper"}
+Language: Gujarati
+Length: {article_length}
+Month: {month}
+Region: {region}
+Subject area: {subject_area}
+Crop: {crop_focus or "Current season crops"}
+Topic: {topic}
+
+Deep research notes:
+{research_notes}
+
+Draft article:
+{article}
+
+Return only the rewritten Gujarati newspaper article.
+""".strip()
+
+
+def newspaper_final_editor_prompt(
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    topic: str,
+    newspaper_style: str,
+    target_publication: str,
+    research_notes: str,
+    article: str,
+    verified_label_claim_chemicals: str = "",
+) -> str:
+    return f"""
+Act as a senior Gujarati weekly newspaper agriculture editor.
+
+Finalize the article silently using these checks:
+1. Headline and subheadline are simple, timely, and farmer-benefit oriented.
+2. Opening is current and farmer-first.
+3. Length is reasonably close to {article_length}.
+4. Paragraphs are short and readable in newspaper columns.
+5. The three advisory boxes and final practical takeaway are present.
+6. The selected {newspaper_style} style is clear:
+   {NEWSPAPER_STYLE_NOTES[newspaper_style]}
+7. Science is brief, simple, and accurate.
+8. Practical advice is safe and useful.
+9. Unsupported local outbreak or official advisory claims are softened.
+10. The article does not read like a magazine essay, research paper, review,
+    or university report.
+11. Gujarati is natural and publication-ready.
+12. No inline citations, source list, editor notes, checklist, or score remains.
+
+{verified_chemicals_prompt_section(verified_label_claim_chemicals)}
+
+Target publication: {target_publication or "Gujarati weekly agriculture newspaper"}
+Month: {month}
+Region: {region}
+Subject area: {subject_area}
+Crop: {crop_focus or "Current season crops"}
+Topic: {topic}
+
+Deep research notes:
+{research_notes}
+
+Article to finalize:
+{article}
+
+Return only the final Gujarati newspaper article.
+""".strip()
+
+
 def markdown_to_docx_blocks(text: str) -> list[tuple[str, str]]:
     blocks = []
     pending = []
@@ -3603,6 +3878,318 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
     return st.session_state.get("verified_label_claim_chemicals", "")
 
 
+def render_newspaper_tab(
+    client,
+    research_model: str,
+    research_provider: str,
+    review_model: str,
+    review_provider: str,
+    api_keys: dict[str, str],
+    article_model: str,
+    use_search_for_article: bool,
+    temperature: float,
+    month: str,
+    region: str,
+    subject_area: str,
+    crop_focus: str,
+    article_length: str,
+    verified_label_claim_chemicals: str,
+) -> None:
+    st.subheader("Gujarati Weekly Newspaper Writing Workflow")
+    st.write(
+        "This tab uses the same deep-research, drafting, review, rewrite, and "
+        "final-editor procedure as the other tabs. It only writes articles; "
+        "it does not schedule or automate them."
+    )
+    st.caption("The Article length selected above is used for this tab.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        topic_hint = st.text_input(
+            "Manual Gujarati article title optional for Tab 6",
+            placeholder="Type a Gujarati title, or leave blank for topic suggestions.",
+            key="newspaper_topic_hint",
+        )
+    with col2:
+        newspaper_crop = st.text_input(
+            "Crop for Tab 6",
+            value=crop_focus,
+            placeholder="Example: mango, chilli, cotton, okra, vegetables",
+            key="newspaper_crop_focus",
+        )
+
+    col3, col4 = st.columns(2)
+    with col3:
+        newspaper_style = st.selectbox(
+            "Newspaper article writing style",
+            list(NEWSPAPER_STYLE_NOTES),
+            key="newspaper_style",
+        )
+    with col4:
+        target_publication = st.text_input(
+            "Target newspaper or weekly page",
+            value="Gujarati weekly agriculture newspaper",
+            key="newspaper_target_publication",
+        )
+
+    st.info(NEWSPAPER_STYLE_NOTES[newspaper_style])
+    search_details = st.text_area(
+        "Extra details to guide Tab 6 search optional",
+        placeholder=(
+            "Crop, pest or mite, district, weather, symptoms, farmer question, "
+            "source clue, or points the article must cover."
+        ),
+        height=100,
+        key="newspaper_search_details",
+    )
+
+    if st.button(
+        "Deep research and references for Tab 6",
+        type="primary",
+        key="newspaper_research_button",
+    ):
+        with st.spinner("Researching current newspaper topics and references..."):
+            research, sources = generate_text(
+                client,
+                research_model,
+                newspaper_research_prompt(
+                    month,
+                    region,
+                    subject_area,
+                    newspaper_crop,
+                    topic_hint,
+                    newspaper_style,
+                    target_publication,
+                    search_details,
+                ),
+                use_search=research_provider == PROVIDER_GEMINI,
+                temperature=0.35,
+                provider=research_provider,
+                api_keys=api_keys,
+            )
+            st.session_state["newspaper_research"] = research
+            st.session_state["newspaper_sources"] = sources
+            st.session_state["newspaper_saved_topic_hint"] = topic_hint
+            st.session_state["newspaper_saved_search_details"] = search_details
+            st.session_state["newspaper_saved_crop_focus"] = newspaper_crop
+            st.session_state["newspaper_saved_style"] = newspaper_style
+            st.session_state["newspaper_saved_publication"] = target_publication
+            st.session_state.pop("newspaper_topic_choice", None)
+            st.session_state.pop("newspaper_article", None)
+            st.session_state.pop("newspaper_rewritten_article", None)
+            st.session_state.pop("newspaper_final_article", None)
+            st.session_state.pop("newspaper_review", None)
+
+    if "newspaper_research" in st.session_state:
+        st.subheader("Tab 6 research notes")
+        st.markdown(st.session_state["newspaper_research"])
+        render_sources("Tab 6 research sources", st.session_state.get("newspaper_sources", []))
+
+        selected_topic = suggested_topic_selector(
+            "Select one current farmer-problem topic for Tab 6",
+            "newspaper_topic_choice",
+            st.session_state["newspaper_research"],
+            st.session_state.get("newspaper_saved_topic_hint", ""),
+        )
+        research_notes = st.text_area(
+            "Selected research notes for Tab 6",
+            value=st.session_state["newspaper_research"],
+            height=300,
+            key="newspaper_research_notes",
+        )
+
+        if st.button(
+            "Use this research to write newspaper article",
+            key="newspaper_write_article",
+        ):
+            if not selected_topic.strip():
+                st.warning("Please select one suggested Tab 6 topic before writing.")
+            else:
+                selected_context = selected_topic_context(
+                    selected_topic,
+                    research_notes,
+                    st.session_state.get("newspaper_saved_topic_hint", ""),
+                    st.session_state.get("newspaper_saved_search_details", ""),
+                )
+                with st.spinner("Writing the Gujarati newspaper article..."):
+                    article, sources = generate_text(
+                        client,
+                        article_model,
+                        newspaper_article_prompt(
+                            month,
+                            region,
+                            subject_area,
+                            st.session_state.get("newspaper_saved_crop_focus", newspaper_crop),
+                            article_length,
+                            selected_topic,
+                            st.session_state.get("newspaper_saved_style", newspaper_style),
+                            st.session_state.get("newspaper_saved_publication", target_publication),
+                            selected_context,
+                            verified_label_claim_chemicals,
+                        ),
+                        use_search=use_search_for_article,
+                        temperature=temperature,
+                    )
+                    st.session_state["newspaper_article"] = article
+                    st.session_state["newspaper_article_sources"] = sources
+                    st.session_state["newspaper_selected_topic"] = selected_topic
+                    st.session_state["newspaper_research_notes_saved"] = selected_context
+                    st.session_state.pop("newspaper_rewritten_article", None)
+                    st.session_state.pop("newspaper_final_article", None)
+                    st.session_state.pop("newspaper_review", None)
+
+    if "newspaper_article" in st.session_state:
+        st.subheader("Tab 6 Step 1: Newspaper article draft")
+        draft = st.text_area(
+            "Tab 6 draft article",
+            value=st.session_state["newspaper_article"],
+            height=440,
+            key="newspaper_draft_article",
+        )
+        st.session_state["newspaper_article"] = draft
+        render_sources(
+            "Tab 6 article grounding sources",
+            st.session_state.get("newspaper_article_sources", []),
+        )
+        st.download_button(
+            "Download Tab 6 draft as TXT",
+            data=draft,
+            file_name="gujarati_newspaper_draft.txt",
+            mime="text/plain",
+            key="newspaper_download_draft",
+        )
+
+        review_col, rewrite_col = st.columns(2)
+        with review_col:
+            review_clicked = st.button(
+                "Review Tab 6 draft quality",
+                key="newspaper_review_draft",
+            )
+        with rewrite_col:
+            rewrite_clicked = st.button(
+                "Rewrite with selected newspaper style",
+                key="newspaper_rewrite_button",
+            )
+
+        if review_clicked:
+            with st.spinner("Reviewing Tab 6 newspaper article quality..."):
+                review, _ = generate_text(
+                    client,
+                    review_model,
+                    newspaper_review_prompt(
+                        draft,
+                        st.session_state.get("newspaper_saved_style", newspaper_style),
+                        st.session_state.get("newspaper_saved_publication", target_publication),
+                        article_length,
+                    ),
+                    use_search=False,
+                    temperature=0.25,
+                    provider=review_provider,
+                    api_keys=api_keys,
+                )
+                st.session_state["newspaper_review"] = review
+
+        if rewrite_clicked:
+            with st.spinner("Rewriting with the selected newspaper style..."):
+                rewrite, _ = generate_text(
+                    client,
+                    article_model,
+                    newspaper_rewrite_prompt(
+                        month,
+                        region,
+                        subject_area,
+                        st.session_state.get("newspaper_saved_crop_focus", newspaper_crop),
+                        article_length,
+                        st.session_state.get("newspaper_selected_topic", ""),
+                        st.session_state.get("newspaper_saved_style", newspaper_style),
+                        st.session_state.get("newspaper_saved_publication", target_publication),
+                        st.session_state.get("newspaper_research_notes_saved", ""),
+                        draft,
+                        verified_label_claim_chemicals,
+                    ),
+                    use_search=False,
+                    temperature=0.45,
+                )
+                st.session_state["newspaper_rewritten_article"] = rewrite
+                st.session_state.pop("newspaper_final_article", None)
+
+    if "newspaper_review" in st.session_state:
+        st.subheader("Tab 6 article review")
+        st.markdown(st.session_state["newspaper_review"])
+
+    if "newspaper_rewritten_article" in st.session_state:
+        st.subheader("Tab 6 Step 2: Newspaper-style rewrite")
+        rewrite = st.text_area(
+            "Tab 6 improved article",
+            value=st.session_state["newspaper_rewritten_article"],
+            height=480,
+            key="newspaper_rewritten_text",
+        )
+        st.session_state["newspaper_rewritten_article"] = rewrite
+        st.download_button(
+            "Download Tab 6 rewritten article as TXT",
+            data=rewrite,
+            file_name="gujarati_newspaper_rewrite.txt",
+            mime="text/plain",
+            key="newspaper_download_rewrite",
+        )
+
+        if st.button(
+            "Final editor check for Tab 6 newspaper article",
+            type="primary",
+            key="newspaper_final_editor_button",
+        ):
+            with st.spinner("Final editor is polishing the Tab 6 newspaper article..."):
+                final_article, _ = generate_text(
+                    client,
+                    article_model,
+                    newspaper_final_editor_prompt(
+                        month,
+                        region,
+                        subject_area,
+                        st.session_state.get("newspaper_saved_crop_focus", newspaper_crop),
+                        article_length,
+                        st.session_state.get("newspaper_selected_topic", ""),
+                        st.session_state.get("newspaper_saved_style", newspaper_style),
+                        st.session_state.get("newspaper_saved_publication", target_publication),
+                        st.session_state.get("newspaper_research_notes_saved", ""),
+                        rewrite,
+                        verified_label_claim_chemicals,
+                    ),
+                    use_search=False,
+                    temperature=0.3,
+                )
+                st.session_state["newspaper_final_article"] = final_article
+
+    if "newspaper_final_article" in st.session_state:
+        st.subheader("Tab 6 Step 3: Final newspaper-ready article")
+        final_article = st.text_area(
+            "Tab 6 final article for newspaper",
+            value=st.session_state["newspaper_final_article"],
+            height=540,
+            key="newspaper_final_text",
+        )
+        st.session_state["newspaper_final_article"] = final_article
+
+        txt_col, docx_col = st.columns(2)
+        with txt_col:
+            st.download_button(
+                "Download Tab 6 final article as TXT",
+                data=final_article,
+                file_name="gujarati_newspaper_final.txt",
+                mime="text/plain",
+                key="newspaper_download_final_txt",
+            )
+        with docx_col:
+            st.download_button(
+                "Download Tab 6 final article as Word DOCX",
+                data=make_docx(final_article),
+                file_name="gujarati_newspaper_final.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="newspaper_download_final_docx",
+            )
+
+
 def main() -> None:
     st.title("Agro Sandesh Gujarati Agriculture Article Writer")
     st.caption(
@@ -3684,13 +4271,21 @@ def main() -> None:
     render_seasonal_calendar_reference(month, region)
 
     client = build_client(api_keys[PROVIDER_GEMINI])
-    tab_classic, tab_story, tab_farm_wisdom, tab_field_discovery, tab_farmer_engagement = st.tabs(
+    (
+        tab_classic,
+        tab_story,
+        tab_farm_wisdom,
+        tab_field_discovery,
+        tab_farmer_engagement,
+        tab_newspaper,
+    ) = st.tabs(
         [
             "Tab 1: Swaminathan Workflow",
             "Tab 2: Story + Science Prompt",
             "Tab 3: Farm Wisdom Prompt",
             "Tab 4: Field Discovery Prompt",
             "Tab 5: Farmer Engagement Prompt",
+            "Tab 6: Weekly Newspaper Style",
         ]
     )
 
@@ -5158,6 +5753,25 @@ def main() -> None:
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     key="engagement_download_final_docx",
                 )
+
+    with tab_newspaper:
+        render_newspaper_tab(
+            client,
+            research_model,
+            research_provider,
+            review_model,
+            review_provider,
+            api_keys,
+            model,
+            use_search_for_article,
+            temperature,
+            month,
+            region,
+            subject_area,
+            crop_focus,
+            article_length,
+            verified_label_claim_chemicals,
+        )
 
 
 if __name__ == "__main__":
