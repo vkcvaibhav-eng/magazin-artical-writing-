@@ -4210,7 +4210,7 @@ def main() -> None:
         research_model = st.text_input(
             "Research model",
             value=(
-                config_value("PERPLEXITY_MODEL", "sonar-reasoning-pro")
+                config_value("PERPLEXITY_MODEL", "sonar-deep-research")
                 if research_provider == PROVIDER_PERPLEXITY
                 else config_value("GEMINI_RESEARCH_MODEL", "gemini-3.1-pro-preview")
             ),
