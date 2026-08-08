@@ -315,7 +315,7 @@ def generate_perplexity_text(
             "Content-Type": "application/json",
         },
         json=payload,
-        timeout=180,
+        timeout=600,
     )
     raise_for_api_error(response, PROVIDER_PERPLEXITY)
     data = response.json()
@@ -347,7 +347,7 @@ def generate_openai_text(
             "Content-Type": "application/json",
         },
         json=payload,
-        timeout=180,
+        timeout=600,
     )
     raise_for_api_error(response, PROVIDER_OPENAI)
     return extract_openai_text(response.json()), []
