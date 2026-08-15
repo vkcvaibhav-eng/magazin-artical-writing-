@@ -4,6 +4,55 @@ A Streamlit app that drafts, reviews, and polishes Gujarati agricultural
 magazine articles using a multi-AI workflow (Perplexity/Gemini for research,
 Gemini for Gujarati drafting, OpenAI/Gemini for quality review).
 
+## Krushi Prabhat output
+
+- Article-length choices include 700, 800, 900, and 1000 words (plus the existing
+  longer formats for other magazines).
+- Select **700 words** for an official Krushi Prabhat submission; the publication
+  notice sets 700 words as the maximum. The longer choices are working-draft formats.
+- Final articles show a word-count and Gujarati Unicode compliance check.
+- Downloaded Word files are editable DOCX files using **Nirmala UI** with Gujarati
+  (`gu-IN`) Unicode language metadata.
+
+## District-first crop and pest evidence
+
+Topic discovery is now region- and district-first. Selecting **South Gujarat**
+automatically selects Bharuch, Dang, Narmada, Navsari, Surat, Tapi, and Valsad;
+the other Gujarat regions behave the same way with their own districts. The user
+can remove districts from the auto-selected list to narrow the research scope.
+The app covers all 34 districts (including Vav-Tharad) and accepts an actual
+sowing/transplanting date, a known crop stage, and a field/weather observation.
+Before suggesting a topic, deep research must produce a `DISTRICT_CROP_EVIDENCE`
+section and verify each selected district separately:
+
+1. crop presence from Gujarat Directorate of Economics & Statistics records;
+2. sowing/phenology from the ICAR-CRIDA district plan or a current official advisory;
+3. current weather from IMD district agromet information;
+4. pest occurrence from SAU/KVK/NPSS surveillance or advisory evidence.
+
+Every topic is labelled **Seasonal possibility**, **Pest watch**, or
+**Confirmed alert**. Weather can raise monitoring priority but cannot, by itself,
+confirm a pest outbreak. If an official crop record is unavailable, the app asks
+the research model to state a data gap rather than inventing crop area or rank.
+The parsed government-recorded crop shortlist is selectable before the user chooses
+an article topic.
+Krushi Go-Vidya is retained only as a secondary editorial comparison, not the
+primary crop calendar. Older Vav-Tharad crop records are treated as a clearly
+labelled Banaskantha legacy baseline rather than current district totals.
+
+## Topic-based management evidence
+
+After selecting a suggested topic in any writing tab, the app now shows:
+
+1. **PPQS / CIB&RC Label Claim Checker** — search and select only the
+   label-claim pesticides allowed in that topic's article.
+2. **Gujarat University Recommendations (AGRESCO)** — search and select the
+   official university recommendations to include.
+
+The structured topic list supplies English crop and pest search terms. Evidence
+choices are stored separately for each tab and reset automatically when its
+selected topic changes.
+
 ## Run locally
 
 ```bash
