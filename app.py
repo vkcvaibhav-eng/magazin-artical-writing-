@@ -1,5 +1,6 @@
 import os
 import re
+import unicodedata
 import zipfile
 from datetime import datetime
 from html import escape
@@ -101,6 +102,65 @@ DISTRICT_TO_REGION = {
 GUJARAT_DISTRICTS = sorted(DISTRICT_TO_REGION)
 GUJARAT_REGIONS = [WHOLE_GUJARAT_REGION, *DISTRICT_REGION_GROUPS]
 
+REGION_GUJARATI_LABELS = {
+    WHOLE_GUJARAT_REGION: "સમગ્ર ગુજરાત",
+    "South Gujarat": "દક્ષિણ ગુજરાત",
+    "Central Gujarat (Middle Gujarat)": "મધ્ય ગુજરાત",
+    "North Gujarat": "ઉત્તર ગુજરાત",
+    "Saurashtra": "સૌરાષ્ટ્ર",
+    "Kutch (Kachchh)": "કચ્છ",
+}
+
+REGION_MATCH_ALIASES = {
+    WHOLE_GUJARAT_REGION: ("whole gujarat", "gujarat", "statewide gujarat"),
+    "South Gujarat": ("south gujarat",),
+    "Central Gujarat (Middle Gujarat)": (
+        "central gujarat",
+        "middle gujarat",
+        "central gujarat middle gujarat",
+    ),
+    "North Gujarat": ("north gujarat",),
+    "Saurashtra": ("saurashtra",),
+    "Kutch (Kachchh)": ("kutch", "kachchh", "kutch kachchh"),
+}
+
+DISTRICT_GUJARATI_ALIASES = {
+    "Ahmedabad": ("અમદાવાદ",),
+    "Amreli": ("અમરેલી",),
+    "Anand": ("આણંદ",),
+    "Aravalli": ("અરવલ્લી",),
+    "Banaskantha": ("બનાસકાંઠા", "બનાસ કાંઠા"),
+    "Bharuch": ("ભરૂચ",),
+    "Bhavnagar": ("ભાવનગર",),
+    "Botad": ("બોટાદ",),
+    "Chhota Udepur": ("છોટા ઉદેપુર", "છોટાઉદેપુર"),
+    "Dahod": ("દાહોદ",),
+    "Dang": ("ડાંગ",),
+    "Devbhumi Dwarka": ("દેવભૂમિ દ્વારકા",),
+    "Gandhinagar": ("ગાંધીનગર",),
+    "Gir Somnath": ("ગીર સોમનાથ",),
+    "Jamnagar": ("જામનગર",),
+    "Junagadh": ("જૂનાગઢ",),
+    "Kachchh": ("કચ્છ",),
+    "Kheda": ("ખેડા",),
+    "Mahisagar": ("મહીસાગર",),
+    "Mehsana": ("મહેસાણા",),
+    "Morbi": ("મોરબી",),
+    "Narmada": ("નર્મદા",),
+    "Navsari": ("નવસારી",),
+    "Panchmahal": ("પંચમહાલ",),
+    "Patan": ("પાટણ",),
+    "Porbandar": ("પોરબંદર",),
+    "Rajkot": ("રાજકોટ",),
+    "Sabarkantha": ("સાબરકાંઠા", "સાબર કાંઠા"),
+    "Surat": ("સુરત",),
+    "Surendranagar": ("સુરેન્દ્રનગર",),
+    "Tapi": ("તાપી",),
+    "Vadodara": ("વડોદરા",),
+    "Valsad": ("વલસાડ",),
+    "Vav-Tharad": ("વાવ-થરાદ", "વાવ થરાદ", "વાવથરાદ"),
+}
+
 CROP_TIMING_MODES = [
     "Estimate from official district sowing window",
     "I know the sowing or transplanting date",
@@ -120,8 +180,26 @@ CROP_STAGE_OPTIONS = [
     "Perennial crop: resting / post-harvest",
 ]
 
+GUJARAT_DAG_APY_URL = "https://dag.gujarat.gov.in/Home/AreaProductionAndYield"
+GUJARAT_DAG_SCR_URL = "https://dag.gujarat.gov.in/Home/SeasonAndCropReport"
+GUJARAT_DAG_WEEKLY_SOWING_URL = "https://dag.gujarat.gov.in/Home/WeeklySowingReport"
 GUJARAT_DES_CROP_DATA_URL = (
     "https://www.data.gov.in/catalog/area-production-and-yield-major-crops-gujarat-state"
+)
+INDIA_DISTRICT_CROP_DATA_URL = (
+    "https://www.data.gov.in/catalog/district-wise-season-wise-crop-production-statistics-0"
+)
+GUJARAT_DISTRICT_STATISTICS_URL = "https://gujecostat.gujarat.gov.in/district-statistics"
+GUJARAT_AGRICULTURAL_STATISTICS_2022_URL = (
+    "https://gujecostat.gujarat.gov.in/uploads/publicationsecmanagment/"
+    "agricultural2022statistics202302_05_23_12_31_14.pdf"
+)
+GUJARAT_THIRD_ADVANCE_ESTIMATE_URL = (
+    "https://www.data.gov.in/resource/third-advance-estimates-area-production-and-yield-"
+    "food-grain-crops-gujarat-state-year-2023"
+)
+GUJARAT_AGRICULTURE_PORTAL_URL = (
+    "https://agri.gujarat.gov.in/Home/main/DirectorateofAgriculture"
 )
 CRIDA_DISTRICT_PLAN_URL = "https://www.icar-crida.res.in/ccp.html"
 IMD_DISTRICT_AGROMET_URL = (
@@ -130,6 +208,44 @@ IMD_DISTRICT_AGROMET_URL = (
 NRIIPM_DATABASES_URL = "https://nriipm.res.in/OnlineDatabases.aspx"
 KRUSHI_GOVIDYA_URL = "https://aau.in/Krushigovidya"
 VAV_THARAD_PARENT_DISTRICT = "Banaskantha"
+
+OFFICIAL_CROP_PATTERN_SOURCES = (
+    (
+        "Gujarat Directorate of Agriculture — Area, Production and Yield",
+        GUJARAT_DAG_APY_URL,
+        "Primary district crop-area, production and crop-rank baseline; use the latest comparable APY report.",
+    ),
+    (
+        "Gujarat Directorate of Agriculture — Season and Crop Report",
+        GUJARAT_DAG_SCR_URL,
+        "Recent district/season crop context and provisional area evidence.",
+    ),
+    (
+        "Gujarat Directorate of Agriculture — Weekly Sowing Report",
+        GUJARAT_DAG_WEEKLY_SOWING_URL,
+        "Current-season sowing progress; use for activity timing, not long-term crop share.",
+    ),
+    (
+        "OGD India — Gujarat major-crop APY catalog",
+        GUJARAT_DES_CROP_DATA_URL,
+        "Machine-readable district/crop/season/year fallback for crop pattern and diversification.",
+    ),
+    (
+        "Gujarat Directorate of Economics and Statistics — District Statistics",
+        GUJARAT_DISTRICT_STATISTICS_URL,
+        "District statistical publications and profile cross-checks.",
+    ),
+    (
+        "Gujarat Agricultural Statistics 2022",
+        GUJARAT_AGRICULTURAL_STATISTICS_2022_URL,
+        "Older official table fallback when newer district tables are inaccessible.",
+    ),
+    (
+        "OGD India — District/season/crop production statistics from 1997",
+        INDIA_DISTRICT_CROP_DATA_URL,
+        "Long historical series fallback; filter to Gujarat and state the latest available year.",
+    ),
+)
 
 SUBJECT_AREAS = [
     "Agricultural acarology",
@@ -1213,6 +1329,18 @@ def compact_district_scope(district_scope: str | list[str] | tuple[str, ...]) ->
     return f"{len(districts)} selected districts"
 
 
+def region_gujarati_label(region: str) -> str:
+    return REGION_GUJARATI_LABELS.get(region, region or WHOLE_GUJARAT_REGION)
+
+
+def official_crop_pattern_source_prompt() -> str:
+    """Return the stable official crop-pattern source order for research prompts."""
+    lines = []
+    for index, (label, url, use) in enumerate(OFFICIAL_CROP_PATTERN_SOURCES, start=1):
+        lines.append(f"{index}. {label}: {url}\n   Use: {use}")
+    return "\n".join(lines)
+
+
 def season_context_for_month(month: str) -> str:
     if month in {"June", "July", "August", "September"}:
         return "Kharif / monsoon crop period"
@@ -1247,10 +1375,11 @@ def district_crop_research_context(
     crop_stage: str = "",
     weather_notes: str = "",
 ) -> str:
-    """Build the official-source evidence gate used before topic generation."""
+    """Build district evidence inputs for region-focused topic generation."""
     selected_districts = district_names_from_scope(district)
     selected_district_label = district_scope_label(district)
     district_count = len(selected_districts)
+    source_hierarchy = official_crop_pattern_source_prompt()
     legacy_note = ""
     if "Vav-Tharad" in selected_districts:
         legacy_note = (
@@ -1261,33 +1390,59 @@ def district_crop_research_context(
         )
 
     return f"""
-OFFICIAL_DISTRICT_CROP_EVIDENCE_GATE:
-- Selected region: {region}
-- Selected districts ({district_count}): {selected_district_label}
+REGION_FIRST_CROP_EVIDENCE_GATE:
+- Publication audience and title scope: {region} ({region_gujarati_label(region)})
+- District evidence inputs only ({district_count}): {selected_district_label}
 - Research month and broad season: {month}; {season_context_for_month(month)}
 - User crop focus: {crop_focus or "None — rank crops from official district records first"}
 - Crop timing basis: {crop_timing_description(sowing_date, crop_stage)}
 - User field/weather notes: {weather_notes or "None — retrieve current district weather and agromet advice"}
 
-Mandatory source hierarchy:
-1. Gujarat Directorate of Economics & Statistics district-, crop-, season- and
-   year-wise area/production records: {GUJARAT_DES_CROP_DATA_URL}
-2. ICAR-CRIDA district agriculture profile and sowing/contingency window:
-   {CRIDA_DISTRICT_PLAN_URL}
-3. Current IMD district weather forecast and agromet advisory:
-   {IMD_DISTRICT_AGROMET_URL}
-4. Current relevant Gujarat SAU/KVK crop and plant-protection advisory.
-5. ICAR-NRIIPM/NPSS pest surveillance or another current official surveillance
-   record where accessible: {NRIIPM_DATABASES_URL}
-6. AAU Krushi Go-Vidya may be consulted only as a secondary editorial comparison,
-   never as the crop-presence, crop-stage or outbreak source: {KRUSHI_GOVIDYA_URL}
+Purpose of district selection:
+- Use each selected district as an evidence unit to learn crop composition,
+  speciality crops, sowing progress and local pest signals within the region.
+- Synthesize those district findings into one regional picture. District selection
+  does not make the district the publication audience.
+- Suggested Gujarati titles and final articles must address {region}, not Navsari,
+  Tapi or another individual district. District names belong in the evidence pack
+  or a supporting field example only when scientifically useful.
+
+Official crop-pattern source hierarchy (try in this order):
+{source_hierarchy}
+
+Crop timing and pest-risk sources:
+- ICAR-CRIDA district agriculture profiles and contingency/sowing windows:
+  {CRIDA_DISTRICT_PLAN_URL}
+- IMD district weather and agromet bulletins: {IMD_DISTRICT_AGROMET_URL}
+- Current relevant Gujarat SAU/KVK crop and plant-protection advisories.
+- ICAR-NRIIPM/NPSS surveillance where a current record is actually available:
+  {NRIIPM_DATABASES_URL}
+- AAU Krushi Go-Vidya is only a secondary editorial comparison, never the primary
+  crop-share, crop-stage or outbreak source: {KRUSHI_GOVIDYA_URL}
+
+Availability and calculation rules:
+- An empty, timed-out or outdated official page is not proof that a crop or pest is
+  absent. Move to the next official source and record which source/year was usable.
+- A recent APY/SCR table is preferred. An older official district series may define
+  the stable cropping pattern, but must not be described as current acreage.
+- Calculate district crop share only when crop area and the matching district total
+  use the same year, season, unit and coverage. Show the formula and denominator.
+  Otherwise report area rank, repeated presence or speciality-crop evidence—never
+  invent a percentage.
+- Sum district areas into a regional total only when all selected districts have
+  comparable year/season/unit coverage. Otherwise make a qualitative regional
+  synthesis and disclose missing districts.
+- A state-level advance estimate may cross-check overall direction, but cannot replace
+  district crop-share evidence. State cross-check: {GUJARAT_THIRD_ADVANCE_ESTIMATE_URL}
+- The Gujarat Agriculture Department portal is a navigation source, not evidence by
+  itself: {GUJARAT_AGRICULTURE_PORTAL_URL}
 
 Evidence rules:
 - Crop presence is a hard gate. Research every selected district separately. Before
-  proposing a crop topic for a district, verify that the crop appears in an official
-  record for that same district. Do not transfer evidence from one selected district
-  to another. Prefer repeated presence across recent available years or a current
-  district crop/sowing report; do not rank crops from a single magazine calendar.
+  using a crop in the regional synthesis, verify it in at least one selected district
+  and identify every district that supports it. Do not transfer one district's value
+  to another. Prefer repeated presence across recent years or a current district
+  crop/sowing report; do not rank crops from a magazine calendar.
 - Historical area/production establishes the district crop baseline, not present-day
   acreage. Clearly state the source year(s) and data freshness.
 - Determine whether the crop is active now from the official sowing window, an actual
@@ -1305,6 +1460,9 @@ Evidence rules:
     clearly stated user field observation confirms occurrence.
 - Never upgrade Seasonal possibility or Pest watch to Confirmed alert from weather,
   historical incidence, social media, news, or Krushi Go-Vidya alone.
+- A current alert in only one district must not be written as a region-wide outbreak.
+  For a regional article, retain Pest watch language unless a regional advisory or
+  comparable current evidence from multiple selected districts supports confirmation.
 - AGRESCO/SAU recommendations and PPQS/CIB&RC label claims are downstream management
   checks after topic selection; they do not prove crop presence or pest occurrence.
 {legacy_note}
@@ -1318,23 +1476,28 @@ def render_district_crop_evidence_reference(
     sowing_date: str = "",
     crop_stage: str = "",
 ) -> None:
-    """Explain the district-first evidence workflow used by deep research."""
+    """Explain how district evidence supports a region-focused article."""
     selected_districts = district_names_from_scope(district)
     selected_district_label = district_scope_label(district)
     scope_heading = compact_district_scope(district)
     with st.expander(
-        f"Official district crop and pest-risk evidence: {scope_heading}",
+        f"Regional crop-pattern evidence: {scope_heading} used internally",
         expanded=True,
     ):
         st.write(
-            "Topic research first verifies district crop presence, then crop timing, "
-            "current weather and pest evidence. Krushi Go-Vidya is no longer used as "
-            "the primary crop calendar."
+            "The selected districts teach the app the cropping pattern and speciality "
+            "crops of the region. They are research inputs—not the target audience of "
+            "the article. Topic titles remain regional."
+        )
+        st.info(
+            f"Article coverage and Gujarati title location: **{region} "
+            f"({region_gujarati_label(region)})**. District names may appear only as "
+            "supporting evidence or a field example, not as the default title target."
         )
         left, right = st.columns(2)
         with left:
             st.markdown(f"**Region:** {region}")
-            st.markdown(f"**Selected districts:** {selected_district_label}")
+            st.markdown(f"**District evidence inputs:** {selected_district_label}")
             st.markdown(f"**Season context:** {season_context_for_month(month)}")
         with right:
             st.markdown(f"**Timing basis:** {crop_timing_description(sowing_date, crop_stage)}")
@@ -1344,16 +1507,27 @@ def render_district_crop_evidence_reference(
                 "records may still be under Banaskantha and will be labelled only as a "
                 "legacy baseline, not as a current Vav-Tharad total."
             )
+        st.markdown("**Official crop-pattern links (priority order):**")
+        for label, url, use in OFFICIAL_CROP_PATTERN_SOURCES:
+            st.markdown(f"- [{label}]({url}) — {use}")
         st.markdown(
-            "Official inputs: "
-            f"[Gujarat DES crop records]({GUJARAT_DES_CROP_DATA_URL}) · "
+            "**Additional official cross-checks:** "
+            f"[Gujarat third advance estimate]({GUJARAT_THIRD_ADVANCE_ESTIMATE_URL}) "
+            "(state context, not district share) · "
+            f"[Gujarat Agriculture Department portal]({GUJARAT_AGRICULTURE_PORTAL_URL})"
+        )
+        st.markdown(
+            "**Timing and pest-risk links:** "
             f"[ICAR-CRIDA district plans]({CRIDA_DISTRICT_PLAN_URL}) · "
             f"[IMD district agromet bulletins]({IMD_DISTRICT_AGROMET_URL}) · "
             f"[ICAR-NRIIPM/NPSS]({NRIIPM_DATABASES_URL})"
         )
         st.caption(
-            "Seasonal possibility = expected window; Pest watch = stage + weather risk; "
-            "Confirmed alert = current official surveillance/advisory or stated field observation."
+            "If one government site is empty, the research moves to the next official "
+            "source. Old official data can describe the crop pattern, but not current "
+            "acreage. Seasonal possibility = expected window; Pest watch = stage + "
+            "weather risk; Confirmed alert requires current evidence and must not be "
+            "generalized from one district to the entire region."
         )
 
 
@@ -1661,48 +1835,54 @@ def current_problem_research_guide(
         crop_stage,
         weather_notes,
     )
-    if len(selected_districts) == 1:
-        district_field_rule = (
-            f'Use the exact selected district name "{selected_districts[0]}" in English '
-            "in every topic row."
-        )
-    else:
-        district_field_rule = (
-            "Use exactly one of these selected district names in English in each topic "
-            f"row: {selected_district_label}. Never use an unselected district or combine "
-            "multiple district names in one row."
-        )
+    regional_field_rule = (
+        f'Use the exact selected region "{region}" in English in every TOPIC_OPTIONS '
+        "row. Do not put a district name in that regional-scope field."
+    )
+    regional_title_rule = (
+        f"The Gujarati title may use {region_gujarati_label(region)} or omit a place "
+        "name when the subject is naturally regional, but it must not target an "
+        f"individual district from this evidence set: {selected_district_label}."
+    )
     return f"""
 Current-problem discovery rules:
 - Current date for research context: {current_date}.
-- Treat this as district crop verification and pest-risk assessment for {month},
-  not generic topic brainstorming.
+- Treat this as district evidence collection followed by regional crop and pest-risk
+  synthesis for {month}, not district-targeted or generic topic brainstorming.
 
 {evidence_block}
 
 Required execution order:
 1. Build a district crop shortlist from official government records and show the
-   source year(s). If an official record cannot be accessed, say DATA GAP and do not
-   invent acreage, production, rank or crop presence.
-2. Keep only crops plausibly active in {month} using the official sowing/phenology
+   source year(s). Try the full official fallback hierarchy before marking DATA GAP.
+   Never invent acreage, production, rank, share or crop presence.
+2. Combine comparable district evidence into a {region} crop-pattern synthesis.
+   Identify common crops, speciality crops and supporting districts, but do not turn
+   an individual district into the article audience.
+3. Keep only crops plausibly active in {month} using the official sowing/phenology
    window plus any user-supplied planting date or crop stage.
-3. Retrieve current district weather/agromet information and explain only how it
+4. Retrieve current district weather/agromet information and explain only how it
    changes stage timing or pest suitability.
-4. Match crop + vulnerable stage + weather with known insect/mite/pest windows.
-5. Search current official advisories or surveillance before using Confirmed alert.
-6. Rank article topics only after completing steps 1-5.
+5. Match crop + vulnerable stage + weather with known insect/mite/pest windows.
+6. Search current official advisories or surveillance before using Confirmed alert.
+7. Rank region-focused article topics only after completing steps 1-6.
 
-- Every topic must name a specific crop, one selected district, crop stage, a
+- Every topic must name a specific crop, the selected region, crop stage, a
   farmer-recognizable symptom and an evidence status. Reject any topic that cannot.
+- Selected districts are internal evidence units. Never make Navsari, Tapi or another
+  individual district the default article-title target merely because its record was
+  used to identify the crop or problem.
 - Search official/government/university sources first. Farmer posts, trends, YouTube,
   general news and Krushi Go-Vidya may be used only as secondary signals.
 - If using trends, social posts, YouTube, or local media signals, use them only as
   weak signals and corroborate with official, university/KVK, weather, market, or
   multiple news sources.
-- For the selected region and district set, keep every district's evidence separate
-  before ranking topics; never merge one district's crop record or advisory into another.
-- For {selected_district_label}, focus on recorded crops, local crop stage, rainfall,
-  humidity, temperature, irrigation, soil/dust conditions and farmer-visible symptoms.
+- Keep every district's evidence separate before the regional synthesis; never copy
+  one district's crop value or advisory to another. Then state which selected districts
+  support each {region} topic and which have a data gap.
+- For the {region} evidence set ({selected_district_label}), focus on recorded crops,
+  crop stage, rainfall, humidity, temperature, irrigation, soil/dust conditions and
+  farmer-visible symptoms.
 - Do not suggest random evergreen topics such as generic IPM, generic nutrient
   management, or generic technology unless there is current regional evidence that
   farmers are facing that problem now.
@@ -1718,19 +1898,27 @@ DISTRICT_CROP_EVIDENCE
 CROP 1 | Crop in English | District | Government source and URL | Source year(s) | Area/production evidence or "recorded; value unavailable" | Current-season status
 Continue only for crops that pass the official crop-presence gate.
 
+Then synthesize the district evidence for the publication audience:
+REGION_CROP_SYNTHESIS
+REGION_CROP 1 | Crop in English | {region} | Supporting selected districts | Comparable area/share or qualitative rank | Source year(s) | Current-season status
+Use a percentage only when the denominator and all contributing data are comparable.
+Otherwise write a transparent qualitative rank and list any district data gaps.
+
 Then include this exact topic section so the app can make selection easy:
 TOPIC_OPTIONS
-TOPIC 1 | Gujarati title | District in English | Main crop (English label-claim name) | Pest/problem (English search term) | Crop stage | Seasonal possibility/Pest watch/Confirmed alert | Evidence confidence /10
-TOPIC 2 | Gujarati title | District in English | Main crop (English label-claim name) | Pest/problem (English search term) | Crop stage | Seasonal possibility/Pest watch/Confirmed alert | Evidence confidence /10
+TOPIC 1 | Gujarati title | Region in English | Main crop (English label-claim name) | Pest/problem (English search term) | Crop stage | Seasonal possibility/Pest watch/Confirmed alert | Evidence confidence /10
+TOPIC 2 | Gujarati title | Region in English | Main crop (English label-claim name) | Pest/problem (English search term) | Crop stage | Seasonal possibility/Pest watch/Confirmed alert | Evidence confidence /10
 Return 5 to 10 topics when the evidence supports them. Never pad the list with an
-unverified crop or pest claim. {district_field_rule}
+unverified crop or pest claim. {regional_field_rule} {regional_title_rule}
 
 Keep the title in Gujarati, but write the Main crop and Pest/problem fields in
 English so the app can search PPQS/CIB&RC label claims and AGRESCO records after
 the user selects a topic.
 
 After TOPIC_OPTIONS, provide a ranked evidence pack. For every topic include:
-- Exact district crop-record source, URL, year(s) and data freshness
+- Regional relevance and the supporting selected districts
+- Exact district crop-record source, URL, year(s), data freshness and any data gaps
+- Crop share with a valid denominator, or a clearly labelled area rank/qualitative pattern
 - Why the crop is considered active now and whether the stage is observed or estimated
 - Current district weather/agromet source and weather-to-risk reasoning
 - Pest evidence status and the evidence needed to upgrade it
@@ -1738,6 +1926,7 @@ After TOPIC_OPTIONS, provide a ranked evidence pack. For every topic include:
 - Why this is a current {month} problem, not a random topic
 - Current official advisory/surveillance evidence, or an explicit statement that none
   was found
+- A warning against generalizing one district's alert to all of {region}
 - Caution: what must be locally verified before publication
 """.strip()
 
@@ -1768,7 +1957,7 @@ Crop focus, if any: {crop_focus or "No specific crop focus"}
 {current_problem_research_guide(month, region, district, crop_focus, sowing_date, crop_stage, weather_notes)}
 
 Research priorities:
-- Selected district-specific farmer problems and officially recorded crops
+- Region-relevant farmer problems built from the selected districts' official crop evidence
 - Agricultural acarology and agricultural entomology
 - Current pest and mite problems
 - Seasonal crop stage and month-wise agricultural activity
@@ -1784,7 +1973,7 @@ First create a deep research pack using multiple search angles:
 1. Current pest/mite relevance
 2. Crop stage and seasonal activity
 3. Month/weather connection
-4. Selected district relevance and official crop-presence evidence
+4. Regional relevance synthesized from selected-district crop-presence evidence
 5. Field observations farmers may recognize
 6. Scientific background in simple language
 7. Natural enemies and integrated management
@@ -1792,7 +1981,8 @@ First create a deep research pack using multiple search angles:
 
 Return 5 to 10 topic options using the required TOPIC_OPTIONS format above.
 For each topic, keep the Gujarati title specific to a real current farmer
-problem, crop, and selected Gujarat district.
+problem and crop in the selected Gujarat region. Do not target a district in the
+title merely because that district supplied the crop or pest evidence.
 
 Do not select the final article topic automatically. The user will choose from
 the ranked suggested topics in the app. After the topic options, provide a useful
@@ -2098,7 +2288,7 @@ Research assignment:
 Research priorities:
 - Current and prevailing crop problems
 - Agricultural acarology and agricultural entomology relevance
-- Selected district-specific farming conditions and officially recorded crops
+- Regional farming conditions synthesized from selected-district official crop records
 - Crop stage, weather influence, and seasonal activity
 - Farmer observations and field-level symptoms
 - Scientific reason behind the problem
@@ -2112,7 +2302,7 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite or crop problem relevance
 - Month, weather, and crop-stage connection
-- Selected district field context
+- Regional field context with supporting district evidence kept in the research notes
 - Farmer-recognizable observations for a story opening
 - Science that can be explained simply after the field situation
 - Natural enemies, IPM, monitoring, and practical decision support
@@ -2403,7 +2593,7 @@ Tab 4 magazine requirement:
 Research priorities:
 - Current and prevailing crop, pest, mite, weather, or field observation issues
 - Agricultural acarology and entomology relevance when useful
-- Selected district farming realities and officially recorded crops
+- Regional farming realities synthesized from selected-district official crop records
 - Seasonal field conditions, crop stage, weather, soil, dust, irrigation, and
   farmer habits
 - Practical observations farmers may recognize
@@ -2418,7 +2608,7 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite, crop, weather, or field-observation relevance
 - Month, season, crop stage, and weather connection
-- Selected district farming reality
+- Regional farming reality with district evidence used internally
 - Farm habits, orchard/field scenes, soil, dust, moisture, and natural balance
 - Scientific explanation that can emerge from observation
 - Natural enemies, IPM, patient monitoring, and practical wisdom
@@ -2730,7 +2920,7 @@ Research priorities:
 - Current crop, pest, mite, weather, field, orchard, or seasonal observation
   issues relevant to farmers
 - Agricultural acarology and entomology relevance when useful
-- Selected district farming conditions and officially recorded crops
+- Regional farming conditions synthesized from selected-district official crop records
 - Visual scene details: light, weather, crop appearance, leaf condition, dust,
   humidity, dry winds, seasonal transition, farmer activity, and field texture
 - Observations that can create curiosity before explanation
@@ -2745,7 +2935,7 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite, crop, weather, or field-scene relevance
 - Month, season, crop stage, and weather connection
-- Selected district field/orchard context
+- Regional field/orchard context with supporting district evidence kept in notes
 - Visual clues that can carry the opening scene
 - Observations and questions that delay discovery naturally
 - Scientific explanation that can appear after curiosity is built
@@ -3790,12 +3980,26 @@ def selected_topic_context(
     research_notes: str,
     manual_title: str = "",
     search_details: str = "",
+    region: str = WHOLE_GUJARAT_REGION,
 ) -> str:
     topic = (topic or "").strip()
     research_notes = (research_notes or "").strip()
     manual_title = (manual_title or "").strip()
     search_details = (search_details or "").strip()
-    parts = [f"Selected article topic:\n{topic}"]
+    parts = [
+        f"Selected article topic:\n{topic}",
+        (
+            "Regional publication-scope guardrail:\n"
+            f"- Target audience: {region} ({region_gujarati_label(region)}).\n"
+            "- District records in the research notes are internal crop-pattern and "
+            "evidence inputs, not the article's target geography.\n"
+            "- The Gujarati article title must not target an individual district. "
+            "It may use the selected regional name or omit a "
+            "location when the subject is naturally regional.\n"
+            "- A crop or pest observation from one district may be used as a clearly "
+            "labelled example, but must not be generalized as a region-wide outbreak."
+        ),
+    ]
     if manual_title or search_details:
         manual_parts = []
         if manual_title:
@@ -3907,7 +4111,7 @@ def _district_token(value: str) -> str:
 
 
 def topic_matches_district(topic: str, district: str) -> bool:
-    """Require a structured topic row to carry the selected district."""
+    """Match a district in a DISTRICT_CROP_EVIDENCE row."""
     if not district or district == WHOLE_GUJARAT_DISTRICT:
         return True
     parts = [clean_topic_option(part) for part in (topic or "").split("|")]
@@ -3916,6 +4120,80 @@ def topic_matches_district(topic: str, district: str) -> bool:
     expected = _district_token(district)
     location = _district_token(parts[1])
     return bool(expected and location and (expected in location or location in expected))
+
+
+def topic_matches_region(topic: str, region: str) -> bool:
+    """Require a TOPIC_OPTIONS row to carry the selected publication region."""
+    parts = [clean_topic_option(part) for part in (topic or "").split("|")]
+    if len(parts) < 2:
+        return False
+    location_value = re.sub(
+        r"^(?:publication\s+)?region(?:\s+in\s+english)?\s*[:\-–—]?\s*",
+        "",
+        parts[1],
+        flags=re.IGNORECASE,
+    )
+    location = _district_token(
+        re.sub(r"\b(?:agricultural\s+)?region\b", "", location_value, flags=re.IGNORECASE)
+    )
+    aliases = REGION_MATCH_ALIASES.get(region, (region,))
+    expected = {_district_token(alias) for alias in aliases}
+    return bool(location and location in expected)
+
+
+def _is_unicode_word_character(character: str) -> bool:
+    if not character:
+        return False
+    category = unicodedata.category(character)
+    return character == "_" or character.isalnum() or category.startswith("M")
+
+
+def _title_contains_location_alias(title: str, alias: str) -> bool:
+    """Match a location as a word, including common attached Gujarati suffixes."""
+    title = (title or "").casefold()
+    alias = (alias or "").casefold()
+    if not title or not alias:
+        return False
+    gujarati_suffixes = (
+        "માં",
+        "ના",
+        "ની",
+        "નો",
+        "નું",
+        "થી",
+        "માટે",
+        "જિલ્લો",
+        "જિલ્લા",
+        "જિલ્લામાં",
+    )
+    for match in re.finditer(re.escape(alias), title):
+        before = title[match.start() - 1] if match.start() else ""
+        after = title[match.end() :]
+        if before and _is_unicode_word_character(before):
+            continue
+        if not after or not _is_unicode_word_character(after[0]):
+            return True
+        if any(after.startswith(suffix) for suffix in gujarati_suffixes):
+            return True
+    return False
+
+
+def topic_title_mentions_district(topic: str, region: str) -> bool:
+    """Block suggested titles that turn an evidence district into the audience."""
+    parts = [clean_topic_option(part) for part in (topic or "").split("|")]
+    title = (parts[0] if parts else topic or "").casefold()
+    for district in GUJARAT_DISTRICTS:
+        # Kachchh is both the district and the accepted name of the Kutch region.
+        if region == "Kutch (Kachchh)" and district == "Kachchh":
+            continue
+        if _title_contains_location_alias(title, district):
+            return True
+        if any(
+            _title_contains_location_alias(title, alias)
+            for alias in DISTRICT_GUJARATI_ALIASES.get(district, ())
+        ):
+            return True
+    return False
 
 
 def topic_matches_crop(topic: str, selected_crops: list[str]) -> bool:
@@ -3939,6 +4217,7 @@ def suggested_topic_selector(
     manual_title: str = "",
 ) -> str:
     topics = extract_suggested_topics(research_notes)
+    selected_region = st.session_state.get("research_region", WHOLE_GUJARAT_REGION)
     selected_districts = st.session_state.get("research_districts")
     if selected_districts is None:
         legacy_district = st.session_state.get(
@@ -3949,28 +4228,25 @@ def suggested_topic_selector(
     else:
         selected_districts = district_names_from_scope(selected_districts)
 
-    if selected_districts:
-        district_topics = [
+    if topics:
+        region_topics = [
             topic
             for topic in topics
-            if any(
-                topic_matches_district(topic, selected_district)
-                for selected_district in selected_districts
-            )
+            if topic_matches_region(topic, selected_region)
+            and not topic_title_mentions_district(topic, selected_region)
         ]
-        if district_topics:
-            topics = district_topics
+        if region_topics:
+            topics = region_topics
             st.caption(
-                "Showing topic rows only for: "
-                + compact_district_scope(selected_districts)
-                + "."
+                f"Showing region-focused topics for {selected_region}. The selected "
+                "districts are used only to build the crop and evidence baseline."
             )
-        elif topics:
+        else:
             topics = []
             st.warning(
-                "The research response did not return a structured topic row for any "
-                f"selected district ({compact_district_scope(selected_districts)}). "
-                "Re-run research; the app will not silently use another district's crop topic."
+                f"The research response did not return a valid {selected_region} topic "
+                "row, or its Gujarati title targeted an individual district. Re-run "
+                "research; district names are evidence inputs, not the article audience."
             )
 
     crop_records = extract_district_crop_evidence(research_notes)
@@ -4003,13 +4279,13 @@ def suggested_topic_selector(
             kept = [crop for crop in previous if crop in crop_options]
             st.session_state[crop_filter_key] = kept or crop_options
         selected_crops = st.multiselect(
-            "Government-recorded active crops to use for topic recommendations",
+            "Government-recorded crops supporting regional topic recommendations",
             options=crop_options,
             key=crop_filter_key,
         )
         st.caption(
-            "Crop choices come from the DISTRICT_CROP_EVIDENCE section returned by "
-            "official-source research. Deselect crops you do not want."
+            "Crop choices come from selected-district evidence, but every suggested "
+            f"article remains targeted to {selected_region}. Deselect crops you do not want."
         )
         topics = [topic for topic in topics if topic_matches_crop(topic, selected_crops)]
         if not selected_crops:
@@ -4493,13 +4769,13 @@ def topic_evidence_defaults(selected_topic: str, crop_fallback: str = "") -> tup
 
 
 def topic_risk_metadata(selected_topic: str) -> tuple[str, str, str, str]:
-    """Return district, crop stage, pest status and confidence from a topic row."""
+    """Return region, crop stage, pest status and confidence from a topic row."""
     parts = [clean_topic_option(part) for part in (selected_topic or "").split("|")]
-    district = parts[1] if len(parts) > 1 else ""
+    region = parts[1] if len(parts) > 1 else ""
     crop_stage = parts[4] if len(parts) > 4 else ""
     pest_status = parts[5] if len(parts) > 5 else ""
     confidence = parts[6] if len(parts) > 6 else ""
-    return district, crop_stage, pest_status, confidence
+    return region, crop_stage, pest_status, confidence
 
 
 def reset_topic_evidence_state(
@@ -4549,7 +4825,7 @@ def render_topic_evidence_selectors(
         return "", ""
 
     crop_default, pest_default = topic_evidence_defaults(selected_topic, crop_fallback)
-    topic_district, crop_stage, pest_status, confidence = topic_risk_metadata(selected_topic)
+    topic_region, crop_stage, pest_status, confidence = topic_risk_metadata(selected_topic)
     reset_topic_evidence_state(
         key_prefix,
         selected_topic,
@@ -4559,7 +4835,7 @@ def render_topic_evidence_selectors(
 
     st.markdown("### Topic-based verified recommendations")
     status_line = " · ".join(
-        filter(None, [topic_district, crop_stage, pest_status, confidence])
+        filter(None, [topic_region, crop_stage, pest_status, confidence])
     )
     if status_line:
         if "confirmed alert" in pest_status.casefold():
@@ -4737,6 +5013,7 @@ def render_newspaper_tab(
                     research_notes,
                     st.session_state.get("newspaper_saved_topic_hint", ""),
                     st.session_state.get("newspaper_saved_search_details", ""),
+                    region,
                 )
                 selected_context = with_reference_recommendations(
                     selected_context,
@@ -5014,18 +5291,20 @@ def main() -> None:
         ]
 
     selected_districts = st.multiselect(
-        "Districts in the selected region",
+        "District crop-evidence inputs (not article-title targets)",
         options=district_options,
         key="research_districts",
         help=(
             "Changing the region automatically selects every district in that region. "
-            "You can remove districts to narrow the research area."
+            "The app uses them to understand the regional crop pattern. You can remove "
+            "districts to narrow the evidence, while the article remains region-focused."
         ),
     )
     st.caption(
         f"**{region}:** {len(selected_districts)} of {len(district_options)} districts "
-        "selected. Changing the region automatically selects all of its districts; "
-        "adjust the list if needed."
+        "selected as evidence inputs. Changing the region automatically selects all "
+        f"of its districts. Suggested titles will target {region_gujarati_label(region)}, "
+        "not an individual district."
     )
     if not selected_districts:
         st.warning("Select at least one district before starting crop and pest research.")
@@ -5187,6 +5466,7 @@ def main() -> None:
                         selected_topic_notes,
                         st.session_state.get("classic_saved_manual_title", ""),
                         st.session_state.get("classic_saved_search_details", ""),
+                        region,
                     )
                     selected_topic = with_reference_recommendations(selected_topic, agresco_block)
                     with st.spinner("Writing the Gujarati article draft..."):
@@ -5477,6 +5757,7 @@ def main() -> None:
                         story_research_notes,
                         st.session_state.get("story_saved_topic_hint", ""),
                         st.session_state.get("story_saved_search_details", ""),
+                        region,
                     )
                     story_selected_context = with_reference_recommendations(
                         story_selected_context, agresco_block
@@ -5799,6 +6080,7 @@ def main() -> None:
                         wisdom_research_notes,
                         st.session_state.get("wisdom_saved_topic_hint", ""),
                         st.session_state.get("wisdom_saved_search_details", ""),
+                        region,
                     )
                     wisdom_selected_context = with_reference_recommendations(
                         wisdom_selected_context, agresco_block
@@ -6124,6 +6406,7 @@ def main() -> None:
                         discovery_research_notes,
                         st.session_state.get("discovery_saved_topic_hint", ""),
                         st.session_state.get("discovery_saved_search_details", ""),
+                        region,
                     )
                     discovery_selected_context = with_reference_recommendations(
                         discovery_selected_context, agresco_block
@@ -6460,6 +6743,7 @@ def main() -> None:
                         engagement_research_notes,
                         st.session_state.get("engagement_saved_topic_hint", ""),
                         st.session_state.get("engagement_saved_search_details", ""),
+                        region,
                     )
                     engagement_selected_context = with_reference_recommendations(
                         engagement_selected_context, agresco_block
