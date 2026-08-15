@@ -45,6 +45,7 @@ MONTHS = [
 ]
 
 WHOLE_GUJARAT_DISTRICT = "Whole Gujarat (all districts)"
+WHOLE_GUJARAT_REGION = "Whole Gujarat"
 
 DISTRICT_REGION_GROUPS = {
     "South Gujarat": (
@@ -97,7 +98,8 @@ DISTRICT_TO_REGION = {
     for district in districts
 }
 
-GUJARAT_DISTRICTS = [WHOLE_GUJARAT_DISTRICT] + sorted(DISTRICT_TO_REGION)
+GUJARAT_DISTRICTS = sorted(DISTRICT_TO_REGION)
+GUJARAT_REGIONS = [WHOLE_GUJARAT_REGION, *DISTRICT_REGION_GROUPS]
 
 CROP_TIMING_MODES = [
     "Estimate from official district sowing window",
@@ -1168,8 +1170,47 @@ def with_reference_recommendations(context: str, agresco_block: str) -> str:
 
 def district_region(district: str) -> str:
     if district == WHOLE_GUJARAT_DISTRICT:
-        return "Whole Gujarat"
-    return DISTRICT_TO_REGION.get(district, "Whole Gujarat")
+        return WHOLE_GUJARAT_REGION
+    return DISTRICT_TO_REGION.get(district, WHOLE_GUJARAT_REGION)
+
+
+def districts_for_region(region: str) -> list[str]:
+    """Return the selectable government districts for an agricultural region."""
+    if region == WHOLE_GUJARAT_REGION:
+        return list(GUJARAT_DISTRICTS)
+    return list(DISTRICT_REGION_GROUPS.get(region, ()))
+
+
+def district_names_from_scope(district_scope: str | list[str] | tuple[str, ...]) -> list[str]:
+    """Normalize a legacy single-district value or the new multi-district scope."""
+    if isinstance(district_scope, (list, tuple)):
+        candidates = district_scope
+    else:
+        value = (district_scope or "").strip()
+        if value in {WHOLE_GUJARAT_DISTRICT, WHOLE_GUJARAT_REGION}:
+            return list(GUJARAT_DISTRICTS)
+        candidates = value.split(",") if value else []
+
+    selected: list[str] = []
+    for candidate in candidates:
+        name = str(candidate).strip()
+        if name in DISTRICT_TO_REGION and name not in selected:
+            selected.append(name)
+    return selected
+
+
+def district_scope_label(district_scope: str | list[str] | tuple[str, ...]) -> str:
+    districts = district_names_from_scope(district_scope)
+    if not districts:
+        return WHOLE_GUJARAT_DISTRICT
+    return ", ".join(districts)
+
+
+def compact_district_scope(district_scope: str | list[str] | tuple[str, ...]) -> str:
+    districts = district_names_from_scope(district_scope)
+    if len(districts) <= 4:
+        return ", ".join(districts)
+    return f"{len(districts)} selected districts"
 
 
 def season_context_for_month(month: str) -> str:
@@ -1207,9 +1248,11 @@ def district_crop_research_context(
     weather_notes: str = "",
 ) -> str:
     """Build the official-source evidence gate used before topic generation."""
-    selected_district = district or WHOLE_GUJARAT_DISTRICT
+    selected_districts = district_names_from_scope(district)
+    selected_district_label = district_scope_label(district)
+    district_count = len(selected_districts)
     legacy_note = ""
-    if selected_district == "Vav-Tharad":
+    if "Vav-Tharad" in selected_districts:
         legacy_note = (
             "Vav-Tharad became a separate district on 2 October 2025. If the Gujarat "
             "DES series has no separate Vav-Tharad row, use only the relevant historical "
@@ -1219,8 +1262,8 @@ def district_crop_research_context(
 
     return f"""
 OFFICIAL_DISTRICT_CROP_EVIDENCE_GATE:
-- Selected district: {selected_district}
-- Derived agricultural region: {region}
+- Selected region: {region}
+- Selected districts ({district_count}): {selected_district_label}
 - Research month and broad season: {month}; {season_context_for_month(month)}
 - User crop focus: {crop_focus or "None — rank crops from official district records first"}
 - Crop timing basis: {crop_timing_description(sowing_date, crop_stage)}
@@ -1240,10 +1283,11 @@ Mandatory source hierarchy:
    never as the crop-presence, crop-stage or outbreak source: {KRUSHI_GOVIDYA_URL}
 
 Evidence rules:
-- Crop presence is a hard gate. Before proposing a crop topic, verify that the crop
-  appears in an official record for the selected district. Prefer repeated presence
-  across recent available years or a current district crop/sowing report; do not rank
-  crops from a single magazine calendar.
+- Crop presence is a hard gate. Research every selected district separately. Before
+  proposing a crop topic for a district, verify that the crop appears in an official
+  record for that same district. Do not transfer evidence from one selected district
+  to another. Prefer repeated presence across recent available years or a current
+  district crop/sowing report; do not rank crops from a single magazine calendar.
 - Historical area/production establishes the district crop baseline, not present-day
   acreage. Clearly state the source year(s) and data freshness.
 - Determine whether the crop is active now from the official sowing window, an actual
@@ -1275,9 +1319,11 @@ def render_district_crop_evidence_reference(
     crop_stage: str = "",
 ) -> None:
     """Explain the district-first evidence workflow used by deep research."""
-    selected_district = district or WHOLE_GUJARAT_DISTRICT
+    selected_districts = district_names_from_scope(district)
+    selected_district_label = district_scope_label(district)
+    scope_heading = compact_district_scope(district)
     with st.expander(
-        f"Official district crop and pest-risk evidence: {selected_district}",
+        f"Official district crop and pest-risk evidence: {scope_heading}",
         expanded=True,
     ):
         st.write(
@@ -1288,10 +1334,11 @@ def render_district_crop_evidence_reference(
         left, right = st.columns(2)
         with left:
             st.markdown(f"**Region:** {region}")
+            st.markdown(f"**Selected districts:** {selected_district_label}")
             st.markdown(f"**Season context:** {season_context_for_month(month)}")
         with right:
             st.markdown(f"**Timing basis:** {crop_timing_description(sowing_date, crop_stage)}")
-        if selected_district == "Vav-Tharad":
+        if "Vav-Tharad" in selected_districts:
             st.warning(
                 "Vav-Tharad became a separate district on 2 October 2025. Older crop "
                 "records may still be under Banaskantha and will be labelled only as a "
@@ -1603,6 +1650,8 @@ def current_problem_research_guide(
     weather_notes: str = "",
 ) -> str:
     current_date = datetime.now().strftime("%d %B %Y")
+    selected_districts = district_names_from_scope(district)
+    selected_district_label = district_scope_label(district)
     evidence_block = district_crop_research_context(
         month,
         region,
@@ -1612,11 +1661,17 @@ def current_problem_research_guide(
         crop_stage,
         weather_notes,
     )
-    district_field_rule = (
-        "Use the exact selected district name in English in every topic row."
-        if district != WHOLE_GUJARAT_DISTRICT
-        else "Use one specific Gujarat district name in English in every topic row."
-    )
+    if len(selected_districts) == 1:
+        district_field_rule = (
+            f'Use the exact selected district name "{selected_districts[0]}" in English '
+            "in every topic row."
+        )
+    else:
+        district_field_rule = (
+            "Use exactly one of these selected district names in English in each topic "
+            f"row: {selected_district_label}. Never use an unselected district or combine "
+            "multiple district names in one row."
+        )
     return f"""
 Current-problem discovery rules:
 - Current date for research context: {current_date}.
@@ -1637,17 +1692,17 @@ Required execution order:
 5. Search current official advisories or surveillance before using Confirmed alert.
 6. Rank article topics only after completing steps 1-5.
 
-- Every topic must name a specific crop, the selected district, crop stage, a
+- Every topic must name a specific crop, one selected district, crop stage, a
   farmer-recognizable symptom and an evidence status. Reject any topic that cannot.
 - Search official/government/university sources first. Farmer posts, trends, YouTube,
   general news and Krushi Go-Vidya may be used only as secondary signals.
 - If using trends, social posts, YouTube, or local media signals, use them only as
   weak signals and corroborate with official, university/KVK, weather, market, or
   multiple news sources.
-- For "Whole Gujarat", compare South Gujarat, Saurashtra, Central/Middle Gujarat,
-  North Gujarat, and Kutch separately before ranking topics.
-- For {district}, focus on its recorded crops, local crop stage, rainfall, humidity,
-  temperature, irrigation, soil/dust conditions and farmer-visible symptoms.
+- For the selected region and district set, keep every district's evidence separate
+  before ranking topics; never merge one district's crop record or advisory into another.
+- For {selected_district_label}, focus on recorded crops, local crop stage, rainfall,
+  humidity, temperature, irrigation, soil/dust conditions and farmer-visible symptoms.
 - Do not suggest random evergreen topics such as generic IPM, generic nutrient
   management, or generic technology unless there is current regional evidence that
   farmers are facing that problem now.
@@ -3825,9 +3880,15 @@ def extract_district_crop_evidence(research_notes: str) -> list[dict[str, str]]:
         crop = parts[0]
         district = parts[1]
         crop_key = normalize_crop_name(crop)
-        if not crop_key or crop_key in {"crop", "crop in english"} or crop_key in seen:
+        district_key = re.sub(r"[^a-z0-9]+", "", district.casefold())
+        record_key = (crop_key, district_key)
+        if (
+            not crop_key
+            or crop_key in {"crop", "crop in english"}
+            or record_key in seen
+        ):
             continue
-        seen.add(crop_key)
+        seen.add(record_key)
         records.append(
             {
                 "crop": crop,
@@ -3878,33 +3939,61 @@ def suggested_topic_selector(
     manual_title: str = "",
 ) -> str:
     topics = extract_suggested_topics(research_notes)
-    selected_district = st.session_state.get("research_district", WHOLE_GUJARAT_DISTRICT)
-    if selected_district != WHOLE_GUJARAT_DISTRICT:
+    selected_districts = st.session_state.get("research_districts")
+    if selected_districts is None:
+        legacy_district = st.session_state.get(
+            "research_district",
+            WHOLE_GUJARAT_DISTRICT,
+        )
+        selected_districts = district_names_from_scope(legacy_district)
+    else:
+        selected_districts = district_names_from_scope(selected_districts)
+
+    if selected_districts:
         district_topics = [
-            topic for topic in topics if topic_matches_district(topic, selected_district)
+            topic
+            for topic in topics
+            if any(
+                topic_matches_district(topic, selected_district)
+                for selected_district in selected_districts
+            )
         ]
         if district_topics:
             topics = district_topics
-            st.caption(f"Showing only topic rows tagged for {selected_district} district.")
+            st.caption(
+                "Showing topic rows only for: "
+                + compact_district_scope(selected_districts)
+                + "."
+            )
         elif topics:
             topics = []
             st.warning(
-                f"The research response did not return a structured topic row for "
-                f"{selected_district}. Re-run research; the app will not silently use "
-                "another district's crop topic."
+                "The research response did not return a structured topic row for any "
+                f"selected district ({compact_district_scope(selected_districts)}). "
+                "Re-run research; the app will not silently use another district's crop topic."
             )
 
     crop_records = extract_district_crop_evidence(research_notes)
-    if selected_district != WHOLE_GUJARAT_DISTRICT:
+    if selected_districts:
         crop_records = [
             record
             for record in crop_records
-            if topic_matches_district(
-                f"Crop evidence | {record.get('district', '')}",
-                selected_district,
+            if any(
+                topic_matches_district(
+                    f"Crop evidence | {record.get('district', '')}",
+                    selected_district,
+                )
+                for selected_district in selected_districts
             )
         ]
-    crop_options = [record["crop"] for record in crop_records]
+    crop_options = []
+    seen_crop_options = set()
+    for record in crop_records:
+        crop_name = record["crop"]
+        crop_key = normalize_crop_name(crop_name)
+        if crop_key and crop_key not in seen_crop_options:
+            crop_options.append(crop_name)
+            seen_crop_options.add(crop_key)
     if crop_options:
         crop_filter_key = f"{key}_official_crop_filter"
         previous = st.session_state.get(crop_filter_key)
@@ -4905,15 +4994,44 @@ def main() -> None:
             index=datetime.now().month - 1,
         )
     with col2:
-        district = st.selectbox(
-            "Gujarat district",
-            GUJARAT_DISTRICTS,
-            index=GUJARAT_DISTRICTS.index("Navsari"),
-            key="research_district",
+        region = st.selectbox(
+            "Gujarat agricultural region",
+            GUJARAT_REGIONS,
+            index=GUJARAT_REGIONS.index("South Gujarat"),
+            key="research_region",
         )
 
-    region = district_region(district)
-    st.caption(f"Agricultural region is derived automatically: **{region}**")
+    district_options = districts_for_region(region)
+    region_state_key = "_research_region_with_district_defaults"
+    if st.session_state.get(region_state_key) != region:
+        st.session_state["research_districts"] = list(district_options)
+        st.session_state[region_state_key] = region
+    elif "research_districts" in st.session_state:
+        st.session_state["research_districts"] = [
+            selected
+            for selected in st.session_state["research_districts"]
+            if selected in district_options
+        ]
+
+    selected_districts = st.multiselect(
+        "Districts in the selected region",
+        options=district_options,
+        key="research_districts",
+        help=(
+            "Changing the region automatically selects every district in that region. "
+            "You can remove districts to narrow the research area."
+        ),
+    )
+    st.caption(
+        f"**{region}:** {len(selected_districts)} of {len(district_options)} districts "
+        "selected. Changing the region automatically selects all of its districts; "
+        "adjust the list if needed."
+    )
+    if not selected_districts:
+        st.warning("Select at least one district before starting crop and pest research.")
+        st.stop()
+
+    district = ", ".join(selected_districts)
 
     subject_area = st.selectbox("Subject area", SUBJECT_AREAS)
     crop_focus = st.text_input(

@@ -16,10 +16,14 @@ Gemini for Gujarati drafting, OpenAI/Gemini for quality review).
 
 ## District-first crop and pest evidence
 
-Topic discovery is now district-first. The user selects one of Gujarat's 34
-districts (including Vav-Tharad), and may supply an actual sowing/transplanting
-date, a known crop stage, and a field/weather observation. Before suggesting a
-topic, deep research must produce a `DISTRICT_CROP_EVIDENCE` section and verify:
+Topic discovery is now region- and district-first. Selecting **South Gujarat**
+automatically selects Bharuch, Dang, Narmada, Navsari, Surat, Tapi, and Valsad;
+the other Gujarat regions behave the same way with their own districts. The user
+can remove districts from the auto-selected list to narrow the research scope.
+The app covers all 34 districts (including Vav-Tharad) and accepts an actual
+sowing/transplanting date, a known crop stage, and a field/weather observation.
+Before suggesting a topic, deep research must produce a `DISTRICT_CROP_EVIDENCE`
+section and verify each selected district separately:
 
 1. crop presence from Gujarat Directorate of Economics & Statistics records;
 2. sowing/phenology from the ICAR-CRIDA district plan or a current official advisory;
