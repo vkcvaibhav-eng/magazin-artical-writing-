@@ -64,10 +64,18 @@ SUBJECT_AREAS = [
 ]
 
 ARTICLE_LENGTHS = [
+    "700 words",
+    "800 words",
+    "900 words",
     "1000 words",
     "1200 words",
     "1500 words",
 ]
+
+KRUSHI_PRABHAT = "Krushi Prabhat"
+KRUSHI_PRABHAT_WORD_LIMIT = 700
+KRUSHI_PRABHAT_EMAIL = "krushiprabhat01@gmail.com"
+GUJARATI_UNICODE_FONT = "Nirmala UI"
 
 MAGAZINE_OPTIONS = [
     "Krushi Vigyan",
@@ -99,9 +107,13 @@ MAGAZINE_STYLE_NOTES = {
         "or broad farmer education in a balanced, credible, non-promotional voice."
     ),
     "Krushi Prabhat": (
-        "Daily agriculture newspaper style. Keep the article shorter, timely, direct, "
-        "and news-oriented. Start with the main point, then farmer relevance, "
-        "region/crop connection, and immediate practical advisory. Avoid long background."
+        "Gujarati agricultural newspaper style. Keep the article short, timely, direct, "
+        "and farmer-oriented. Start with the main point, then farmer relevance, "
+        "region/crop connection, and immediate practical advisory. Avoid long background. "
+        "Write only with standard Gujarati Unicode characters, never legacy-font encoding "
+        "or Romanized Gujarati. For an official Krushi Prabhat submission, the complete "
+        "article must not exceed 700 words and the final file must remain an editable "
+        "Unicode Word document."
     ),
     "Krushi Vigyan": (
         "Practical field-solution Gujarati magazine style. Begin with a field problem, "
@@ -1324,6 +1336,115 @@ Strict chemical control rule:
 # Seed treatment g/kg seed and broadcast/NA water are handled as non-foliar rows.
 
 
+def article_word_bounds(article_length: str) -> tuple[int, int]:
+    """Return a practical inclusive word-count window for the selected limit."""
+    numbers = [int(value) for value in re.findall(r"\d+", article_length or "")]
+    if not numbers:
+        return 0, 0
+    if len(numbers) >= 2:
+        return min(numbers[0], numbers[1]), max(numbers[0], numbers[1])
+
+    maximum = numbers[0]
+    tolerance = max(30, round(maximum * 0.05))
+    return max(1, maximum - tolerance), maximum
+
+
+def article_word_count(article: str) -> int:
+    """Count readable whitespace-separated words, including the article title."""
+    cleaned = re.sub(r"https?://\S+", " ", article or "")
+    cleaned = re.sub(r"[#*_`>|]+", " ", cleaned)
+    return len(re.findall(r"\S+", cleaned))
+
+
+def has_gujarati_unicode(article: str) -> bool:
+    return bool(re.search(r"[\u0A80-\u0AFF]", article or ""))
+
+
+def is_krushi_prabhat(publication: str) -> bool:
+    return (publication or "").strip().casefold() == KRUSHI_PRABHAT.casefold()
+
+
+def publication_output_requirements(publication: str, article_length: str) -> str:
+    minimum, maximum = article_word_bounds(article_length)
+    if minimum and maximum:
+        length_rule = (
+            f"Selected length: {article_length}. Count the Gujarati title and article text "
+            f"together and keep the complete output between {minimum} and {maximum} words. "
+            f"Never exceed {maximum} words."
+        )
+    else:
+        length_rule = f"Selected length: {article_length}."
+
+    unicode_rule = (
+        "Encoding: write with standard Gujarati Unicode characters (Unicode Gujarati block), "
+        "not legacy font encoding, images of text, or Romanized Gujarati."
+    )
+    if not is_krushi_prabhat(publication):
+        return f"{length_rule}\n{unicode_rule}"
+
+    if maximum and maximum <= KRUSHI_PRABHAT_WORD_LIMIT:
+        compliance_rule = (
+            f"Krushi Prabhat submission rule: this is the official-length version. The "
+            f"complete article must stay at or below {KRUSHI_PRABHAT_WORD_LIMIT} words."
+        )
+    else:
+        compliance_rule = (
+            f"Krushi Prabhat working-draft rule: create the selected {article_length} version, "
+            f"but do not describe it as submission-ready because the publication notice sets "
+            f"an official maximum of {KRUSHI_PRABHAT_WORD_LIMIT} words."
+        )
+
+    return (
+        f"{length_rule}\n{unicode_rule}\n{compliance_rule}\n"
+        "File requirement: the final download must remain an editable Unicode Word document."
+    )
+
+
+def render_article_compliance(
+    article: str,
+    article_length: str,
+    publication: str = "",
+) -> None:
+    """Show the user whether the editable article meets length/Unicode requirements."""
+    if not (article or "").strip():
+        return
+
+    count = article_word_count(article)
+    minimum, maximum = article_word_bounds(article_length)
+    if minimum and maximum:
+        if count > maximum:
+            st.warning(
+                f"Word count: {count}. Shorten by at least {count - maximum} words to meet "
+                f"the selected maximum of {maximum}."
+            )
+        elif count < minimum:
+            st.info(
+                f"Word count: {count}. The selected working range is {minimum}-{maximum} words."
+            )
+        else:
+            st.success(f"Word count: {count}. It is within the selected {minimum}-{maximum}-word range.")
+    else:
+        st.caption(f"Word count: {count}")
+
+    if is_krushi_prabhat(publication):
+        if not has_gujarati_unicode(article):
+            st.error("Krushi Prabhat check: Gujarati Unicode text was not detected.")
+        elif count > KRUSHI_PRABHAT_WORD_LIMIT:
+            st.error(
+                f"Krushi Prabhat submission check: {count} words exceeds the official "
+                f"{KRUSHI_PRABHAT_WORD_LIMIT}-word limit. Select 700 words and run the final editor again."
+            )
+        else:
+            st.success(
+                f"Krushi Prabhat submission check: Gujarati Unicode detected and the article "
+                f"is within {KRUSHI_PRABHAT_WORD_LIMIT} words."
+            )
+        st.caption(
+            f"Editable DOCX font: {GUJARATI_UNICODE_FONT} (Unicode) · Submission email: "
+            f"{KRUSHI_PRABHAT_EMAIL}"
+        )
+
+
 def current_problem_research_guide(month: str, region: str) -> str:
     current_date = datetime.now().strftime("%d %B %Y")
     calendar_block = seasonal_calendar_context(month, region)
@@ -1517,7 +1638,7 @@ Soft evidence guidance:
 
 Target publication: {target_magazine}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Region: {region}
 Month: {month}
 Subject area: {subject_area}
@@ -1608,7 +1729,7 @@ Rewrite goals:
 
 Target publication: {target_magazine}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Region: {region}
 Subject area: {subject_area}
@@ -1678,7 +1799,7 @@ Soft evidence guidance:
 
 Target publication: {target_magazine}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Region: {region}
 Subject area: {subject_area}
@@ -1798,7 +1919,7 @@ youth, and farm advisors.
 Article requirements:
 - Target publication: {target_magazine}
 - Language: Gujarati
-- Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 - Region: {region}
 - Month: {month}
 - Subject area: {subject_area}
@@ -1896,7 +2017,7 @@ Remove:
 
 Target publication: {target_magazine}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Region: {region}
 Subject area: {subject_area}
@@ -1964,7 +2085,7 @@ Soft evidence guidance:
 
 Target publication: {target_magazine}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Region: {region}
 Subject area: {subject_area}
@@ -2101,7 +2222,7 @@ Article requirements:
 - Target magazine: {target_magazine}
 - Target magazine personality: {magazine_style_note(target_magazine)}
 - Language: Gujarati
-- Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 - Month: {month}
 - Season/context: {season_context or month}
 - Region: {region}
@@ -2223,7 +2344,7 @@ Target magazine: {target_magazine}
 Target magazine personality:
 {magazine_style_note(target_magazine)}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Season/context: {season_context or month}
 Region: {region}
@@ -2294,7 +2415,7 @@ Target magazine: {target_magazine}
 Target magazine personality:
 {magazine_style_note(target_magazine)}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Season/context: {season_context or month}
 Region: {region}
@@ -2440,7 +2561,7 @@ Article requirements:
 - Target magazine: {target_magazine}
 - Target magazine personality: {magazine_style_note(target_magazine)}
 - Language: Gujarati
-- Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 - Month: {month}
 - Season/context: {season_context or month}
 - Region: {region}
@@ -2581,7 +2702,7 @@ Target magazine: {target_magazine}
 Target magazine personality:
 {magazine_style_note(target_magazine)}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Season/context: {season_context or month}
 Region: {region}
@@ -2665,7 +2786,7 @@ Target magazine: {target_magazine}
 Target magazine personality:
 {magazine_style_note(target_magazine)}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Season/context: {season_context or month}
 Region: {region}
@@ -2829,7 +2950,7 @@ Keep both boxes short, practical, and easy to remember.
 
 Target details:
 - Language: Gujarati
-- Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 - Month: {month}
 - Season/context: {season_context or month}
 - Region: {region}
@@ -2883,7 +3004,7 @@ Target magazine: {target_magazine}
 Target magazine personality:
 {magazine_style_note(target_magazine)}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Season/context: {season_context or month}
 Region: {region}
@@ -2941,7 +3062,7 @@ Target magazine: {target_magazine}
 Target magazine personality:
 {magazine_style_note(target_magazine)}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_magazine, article_length)}
 Month: {month}
 Season/context: {season_context or month}
 Region: {region}
@@ -3036,7 +3157,7 @@ Assignment:
 - Region: {region}
 - Subject area: {subject_area}
 - Crop focus: {crop_focus or "Current season crops"}
-- Length: {article_length}
+{publication_output_requirements(target_publication, article_length)}
 - Topic: {topic}
 - Newspaper writing style: {newspaper_style}
 - Style requirements: {style_note}
@@ -3088,7 +3209,8 @@ Review the Gujarati agriculture newspaper article below for
 
 Selected style: {newspaper_style}
 Style requirements: {NEWSPAPER_STYLE_NOTES[newspaper_style]}
-Target length: {article_length}
+Article requirement being reviewed:
+{publication_output_requirements(target_publication, article_length)}
 
 Check:
 1. Is the headline simple, timely, and farmer-benefit oriented?
@@ -3148,7 +3270,7 @@ advice.
 
 Target publication: {target_publication or "Gujarati weekly agriculture newspaper"}
 Language: Gujarati
-Length: {article_length}
+{publication_output_requirements(target_publication, article_length)}
 Month: {month}
 Region: {region}
 Subject area: {subject_area}
@@ -3200,6 +3322,7 @@ Finalize the article silently using these checks:
 {verified_chemicals_prompt_section(verified_label_claim_chemicals)}
 
 Target publication: {target_publication or "Gujarati weekly agriculture newspaper"}
+{publication_output_requirements(target_publication, article_length)}
 Month: {month}
 Region: {region}
 Subject area: {subject_area}
@@ -3259,12 +3382,14 @@ def docx_paragraph(style: str, text: str) -> str:
     if style == "ListParagraph":
         text = f"- {text}"
 
+    font_name = escape(GUJARATI_UNICODE_FONT)
     return (
         "<w:p>"
         f"{style_xml}"
         "<w:r>"
-        '<w:rPr><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" '
-        'w:cs="Nirmala UI"/></w:rPr>'
+        f'<w:rPr><w:rFonts w:ascii="{font_name}" w:hAnsi="{font_name}" '
+        f'w:eastAsia="{font_name}" w:cs="{font_name}" w:hint="cs"/>'
+        '<w:lang w:val="gu-IN" w:eastAsia="gu-IN" w:bidi="gu-IN"/></w:rPr>'
         f'<w:t xml:space="preserve">{escape(text)}</w:t>'
         "</w:r>"
         "</w:p>"
@@ -3275,6 +3400,7 @@ def make_docx(article: str) -> bytes:
     document_body = "".join(
         docx_paragraph(style, text) for style, text in markdown_to_docx_blocks(article)
     )
+    font_name = escape(GUJARATI_UNICODE_FONT)
 
     document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -3287,23 +3413,23 @@ def make_docx(article: str) -> bytes:
   </w:body>
 </w:document>"""
 
-    styles_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    styles_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal">
     <w:name w:val="Normal"/>
-    <w:rPr><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" w:cs="Nirmala UI"/><w:sz w:val="24"/></w:rPr>
+    <w:rPr><w:rFonts w:ascii="{font_name}" w:hAnsi="{font_name}" w:eastAsia="{font_name}" w:cs="{font_name}" w:hint="cs"/><w:lang w:val="gu-IN" w:eastAsia="gu-IN" w:bidi="gu-IN"/><w:sz w:val="24"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Title">
     <w:name w:val="Title"/>
     <w:basedOn w:val="Normal"/>
     <w:pPr><w:spacing w:after="240"/></w:pPr>
-    <w:rPr><w:b/><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" w:cs="Nirmala UI"/><w:sz w:val="36"/></w:rPr>
+    <w:rPr><w:b/><w:rFonts w:ascii="{font_name}" w:hAnsi="{font_name}" w:eastAsia="{font_name}" w:cs="{font_name}" w:hint="cs"/><w:lang w:val="gu-IN" w:eastAsia="gu-IN" w:bidi="gu-IN"/><w:sz w:val="36"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Heading1">
     <w:name w:val="heading 1"/>
     <w:basedOn w:val="Normal"/>
     <w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr>
-    <w:rPr><w:b/><w:rFonts w:ascii="Nirmala UI" w:hAnsi="Nirmala UI" w:cs="Nirmala UI"/><w:sz w:val="28"/></w:rPr>
+    <w:rPr><w:b/><w:rFonts w:ascii="{font_name}" w:hAnsi="{font_name}" w:eastAsia="{font_name}" w:cs="{font_name}" w:hint="cs"/><w:lang w:val="gu-IN" w:eastAsia="gu-IN" w:bidi="gu-IN"/><w:sz w:val="28"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="ListParagraph">
     <w:name w:val="List Paragraph"/>
@@ -3567,11 +3693,18 @@ def target_magazine_selector(
         st.session_state[key] = suggested_magazine
     st.session_state[suggestion_key] = suggested_magazine
 
-    return st.selectbox(
+    selected_magazine = st.selectbox(
         "Target magazine personality",
         magazine_options,
         key=key,
     )
+    if is_krushi_prabhat(selected_magazine):
+        st.info(
+            "Krushi Prabhat notice: select 700 words for the official submission. "
+            f"The final DOCX stays editable and uses {GUJARATI_UNICODE_FONT} Gujarati Unicode. "
+            "The 800, 900, and 1000-word choices are available as working drafts."
+        )
+    return selected_magazine
 
 
 def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
@@ -4170,6 +4303,11 @@ def render_newspaper_tab(
             key="newspaper_final_text",
         )
         st.session_state["newspaper_final_article"] = final_article
+        render_article_compliance(
+            final_article,
+            article_length,
+            st.session_state.get("newspaper_saved_publication", target_publication),
+        )
 
         txt_col, docx_col = st.columns(2)
         with txt_col:
@@ -4265,7 +4403,11 @@ def main() -> None:
         "Crop focus optional",
         placeholder="Example: mango, okra, sugarcane, fruit crops, vegetables",
     )
-    article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=1)
+    article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=0)
+    st.caption(
+        "700, 800, 900, and 1000-word choices are available. For Krushi Prabhat, "
+        "select 700 words to follow the publication notice; the DOCX is editable Gujarati Unicode."
+    )
     verified_label_claim_chemicals = render_ppqs_label_claim_checker(crop_focus)
     agresco_block = render_agresco_recommendation_helper(crop_focus)
     render_seasonal_calendar_reference(month, region)
@@ -4511,6 +4653,11 @@ def main() -> None:
                 key="classic_final_article",
             )
             st.session_state["final_article"] = final_article
+            render_article_compliance(
+                final_article,
+                article_length,
+                st.session_state.get("selected_target_magazine", ""),
+            )
 
             col_txt, col_docx = st.columns(2)
             with col_txt:
@@ -4797,6 +4944,11 @@ def main() -> None:
                 key="story_final_text",
             )
             st.session_state["story_final_article"] = story_final
+            render_article_compliance(
+                story_final,
+                article_length,
+                st.session_state.get("story_selected_target_magazine", ""),
+            )
 
             story_txt_col, story_docx_col = st.columns(2)
             with story_txt_col:
@@ -5106,6 +5258,11 @@ def main() -> None:
                 key="wisdom_final_text",
             )
             st.session_state["wisdom_final_article"] = wisdom_final
+            render_article_compliance(
+                wisdom_final,
+                article_length,
+                st.session_state.get("wisdom_selected_target_magazine", ""),
+            )
 
             wisdom_txt_col, wisdom_docx_col = st.columns(2)
             with wisdom_txt_col:
@@ -5415,6 +5572,11 @@ def main() -> None:
                 key="discovery_final_text",
             )
             st.session_state["discovery_final_article"] = discovery_final
+            render_article_compliance(
+                discovery_final,
+                article_length,
+                st.session_state.get("discovery_selected_target_magazine", ""),
+            )
 
             discovery_txt_col, discovery_docx_col = st.columns(2)
             with discovery_txt_col:
@@ -5735,6 +5897,11 @@ def main() -> None:
                 key="engagement_final_text",
             )
             st.session_state["engagement_final_article"] = engagement_final
+            render_article_compliance(
+                engagement_final,
+                article_length,
+                st.session_state.get("engagement_selected_target_magazine", ""),
+            )
 
             engagement_txt_col, engagement_docx_col = st.columns(2)
             with engagement_txt_col:
