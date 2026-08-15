@@ -44,15 +44,90 @@ MONTHS = [
     "December",
 ]
 
-REGIONS = [
-    "Whole Gujarat",
-    "South Gujarat",
-    "Saurashtra",
-    "Central Gujarat (Middle Gujarat)",
-    "North Gujarat",
-    "Kutch (Kachchh)",
-    "India with Gujarat relevance",
+WHOLE_GUJARAT_DISTRICT = "Whole Gujarat (all districts)"
+
+DISTRICT_REGION_GROUPS = {
+    "South Gujarat": (
+        "Bharuch",
+        "Dang",
+        "Narmada",
+        "Navsari",
+        "Surat",
+        "Tapi",
+        "Valsad",
+    ),
+    "Central Gujarat (Middle Gujarat)": (
+        "Ahmedabad",
+        "Anand",
+        "Chhota Udepur",
+        "Dahod",
+        "Kheda",
+        "Mahisagar",
+        "Panchmahal",
+        "Vadodara",
+    ),
+    "North Gujarat": (
+        "Aravalli",
+        "Banaskantha",
+        "Gandhinagar",
+        "Mehsana",
+        "Patan",
+        "Sabarkantha",
+        "Vav-Tharad",
+    ),
+    "Saurashtra": (
+        "Amreli",
+        "Bhavnagar",
+        "Botad",
+        "Devbhumi Dwarka",
+        "Gir Somnath",
+        "Jamnagar",
+        "Junagadh",
+        "Morbi",
+        "Porbandar",
+        "Rajkot",
+        "Surendranagar",
+    ),
+    "Kutch (Kachchh)": ("Kachchh",),
+}
+
+DISTRICT_TO_REGION = {
+    district: region
+    for region, districts in DISTRICT_REGION_GROUPS.items()
+    for district in districts
+}
+
+GUJARAT_DISTRICTS = [WHOLE_GUJARAT_DISTRICT] + sorted(DISTRICT_TO_REGION)
+
+CROP_TIMING_MODES = [
+    "Estimate from official district sowing window",
+    "I know the sowing or transplanting date",
+    "I know the current crop stage",
 ]
+
+CROP_STAGE_OPTIONS = [
+    "Land preparation / nursery",
+    "Sowing / transplanting / emergence",
+    "Vegetative growth / tillering",
+    "Flowering",
+    "Fruit / pod / grain development",
+    "Maturity / harvest",
+    "Perennial crop: new flush",
+    "Perennial crop: flowering",
+    "Perennial crop: fruit development / harvest",
+    "Perennial crop: resting / post-harvest",
+]
+
+GUJARAT_DES_CROP_DATA_URL = (
+    "https://www.data.gov.in/catalog/area-production-and-yield-major-crops-gujarat-state"
+)
+CRIDA_DISTRICT_PLAN_URL = "https://www.icar-crida.res.in/ccp.html"
+IMD_DISTRICT_AGROMET_URL = (
+    "https://mausam.imd.gov.in/responsive/agromet_adv_ser_district_past_lo.php"
+)
+NRIIPM_DATABASES_URL = "https://nriipm.res.in/OnlineDatabases.aspx"
+KRUSHI_GOVIDYA_URL = "https://aau.in/Krushigovidya"
+VAV_THARAD_PARENT_DISTRICT = "Banaskantha"
 
 SUBJECT_AREAS = [
     "Agricultural acarology",
@@ -1091,126 +1166,164 @@ def with_reference_recommendations(context: str, agresco_block: str) -> str:
     return f"{context}\n\n{agresco_block}".strip()
 
 
-CROP_CALENDAR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gujarat_crop_calendar.json")
-KRUSHI_GOVIDYA_URL = "https://aau.in/Krushigovidya"
+def district_region(district: str) -> str:
+    if district == WHOLE_GUJARAT_DISTRICT:
+        return "Whole Gujarat"
+    return DISTRICT_TO_REGION.get(district, "Whole Gujarat")
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
-def load_crop_calendar() -> dict:
-    """Load the month-by-month Gujarat crop / pest / disease calendar."""
-    try:
-        import json
-
-        with open(CROP_CALENDAR_PATH, encoding="utf-8") as handle:
-            data = json.load(handle)
-        return data.get("months", {}) if isinstance(data, dict) else {}
-    except (FileNotFoundError, ValueError):
-        return {}
+def season_context_for_month(month: str) -> str:
+    if month in {"June", "July", "August", "September"}:
+        return "Kharif / monsoon crop period"
+    if month in {"October", "November"}:
+        return "Kharif harvest and Rabi sowing transition"
+    if month in {"December", "January", "February"}:
+        return "Rabi crop period"
+    return "Late Rabi, summer/zaid and perennial-crop period"
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
-def _agresco_crop_corpus() -> str:
-    """Lowercased blob of all AGRESCO titles/text, for quick crop coverage checks."""
-    records = load_agresco_recommendations()
-    return " ".join(_agresco_haystack(rec) for rec in records)
+def crop_timing_description(sowing_date: str = "", crop_stage: str = "") -> str:
+    if sowing_date:
+        try:
+            sowing = datetime.strptime(sowing_date, "%Y-%m-%d").date()
+            days_after = (datetime.now().date() - sowing).days
+            if days_after >= 0:
+                return f"Actual sowing/transplanting date: {sowing_date} ({days_after} days after planting today)"
+        except ValueError:
+            pass
+        return f"Actual sowing/transplanting date supplied by user: {sowing_date}"
+    if crop_stage:
+        return f"Current crop stage supplied by user: {crop_stage}"
+    return "Estimate stage from the official district sowing window; mark the estimate as uncertain"
 
 
-def _crop_has_agresco_coverage(crop: str, corpus: str) -> bool:
-    tokens = [tok for tok in normalize_crop_name(crop).split() if len(tok) >= 4]
-    return any(tok in corpus for tok in tokens)
-
-
-def _calendar_crops_for_region(entries: list[dict], region: str) -> list[dict]:
-    region_lower = (region or "").lower()
-    whole = (not region_lower) or "whole gujarat" in region_lower or "india" in region_lower
-    kept = []
-    for entry in entries:
-        regions = entry.get("regions", []) or []
-        if whole or any(r == "All" for r in regions):
-            kept.append(entry)
-            continue
-        if any(r.lower() in region_lower or region_lower in r.lower() for r in regions):
-            kept.append(entry)
-    return kept
-
-
-def seasonal_calendar_context(month: str, region: str) -> str:
-    """Build a grounding block describing the real crop stage and pest/disease
-    pressure for the selected month and region, so topics are farmer-specific."""
-    months = load_crop_calendar()
-    info = months.get(month)
-    if not info:
-        return ""
-
-    entries = _calendar_crops_for_region(info.get("crops", []), region)
-    if not entries:
-        entries = info.get("crops", [])
-
-    corpus = _agresco_crop_corpus()
-    covered = []
-    lines = [
-        "GUJARAT_SEASONAL_CALENDAR (AAU Krushi Go-Vidya monthly farm calendar + Gujarat agronomy):",
-        f"Month: {month} — Season: {info.get('season', '')}",
-    ]
-    if info.get("weather"):
-        lines.append(f"Weather pattern now: {info['weather']}")
-    lines.append(f"Current crop situation for {region}:")
-    for entry in entries:
-        crop = entry.get("crop", "")
-        pests = ", ".join(entry.get("pests", []) or []) or "—"
-        diseases = ", ".join(entry.get("diseases", []) or []) or "—"
-        lines.append(
-            f"- {crop}: stage {entry.get('stage', '')}; "
-            f"key pests: {pests}; key diseases: {diseases}; "
-            f"field work: {entry.get('operations', '')}"
+def district_crop_research_context(
+    month: str,
+    region: str,
+    district: str,
+    crop_focus: str = "",
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
+) -> str:
+    """Build the official-source evidence gate used before topic generation."""
+    selected_district = district or WHOLE_GUJARAT_DISTRICT
+    legacy_note = ""
+    if selected_district == "Vav-Tharad":
+        legacy_note = (
+            "Vav-Tharad became a separate district on 2 October 2025. If the Gujarat "
+            "DES series has no separate Vav-Tharad row, use only the relevant historical "
+            f"{VAV_THARAD_PARENT_DISTRICT} record as a clearly labelled legacy baseline; "
+            "do not present the whole parent-district value as a current Vav-Tharad value."
         )
-        if corpus and _crop_has_agresco_coverage(crop, corpus):
-            covered.append(crop)
 
-    lines.append(
-        "Anchor every suggested topic to a real crop stage and the current pest or "
-        "disease pressure above. Reject generic evergreen topics that are not tied "
-        "to this month's field situation."
-    )
-    if covered:
-        lines.append(
-            "Prefer topics on these crops, which have verified Gujarat university "
-            "(AGRESCO) recommendations available in this app: "
-            + ", ".join(dict.fromkeys(covered))
-            + "."
+    return f"""
+OFFICIAL_DISTRICT_CROP_EVIDENCE_GATE:
+- Selected district: {selected_district}
+- Derived agricultural region: {region}
+- Research month and broad season: {month}; {season_context_for_month(month)}
+- User crop focus: {crop_focus or "None — rank crops from official district records first"}
+- Crop timing basis: {crop_timing_description(sowing_date, crop_stage)}
+- User field/weather notes: {weather_notes or "None — retrieve current district weather and agromet advice"}
+
+Mandatory source hierarchy:
+1. Gujarat Directorate of Economics & Statistics district-, crop-, season- and
+   year-wise area/production records: {GUJARAT_DES_CROP_DATA_URL}
+2. ICAR-CRIDA district agriculture profile and sowing/contingency window:
+   {CRIDA_DISTRICT_PLAN_URL}
+3. Current IMD district weather forecast and agromet advisory:
+   {IMD_DISTRICT_AGROMET_URL}
+4. Current relevant Gujarat SAU/KVK crop and plant-protection advisory.
+5. ICAR-NRIIPM/NPSS pest surveillance or another current official surveillance
+   record where accessible: {NRIIPM_DATABASES_URL}
+6. AAU Krushi Go-Vidya may be consulted only as a secondary editorial comparison,
+   never as the crop-presence, crop-stage or outbreak source: {KRUSHI_GOVIDYA_URL}
+
+Evidence rules:
+- Crop presence is a hard gate. Before proposing a crop topic, verify that the crop
+  appears in an official record for the selected district. Prefer repeated presence
+  across recent available years or a current district crop/sowing report; do not rank
+  crops from a single magazine calendar.
+- Historical area/production establishes the district crop baseline, not present-day
+  acreage. Clearly state the source year(s) and data freshness.
+- Determine whether the crop is active now from the official sowing window, an actual
+  user-supplied planting date/stage, and a current district advisory. Perennial crops
+  require flush, flowering, fruit-development or post-harvest phenology rather than a
+  simple Kharif/Rabi label.
+- Weather may shift stage timing and pest suitability, but weather must never create
+  crop presence or prove that a pest attack is occurring.
+- Use exactly one pest-evidence status for each topic:
+  * Seasonal possibility — crop/stage literature suggests the pest window, but there
+    is no current district evidence.
+  * Pest watch — crop is active, the vulnerable stage and current weather match, but
+    an outbreak is not confirmed.
+  * Confirmed alert — a current official district advisory/surveillance report or a
+    clearly stated user field observation confirms occurrence.
+- Never upgrade Seasonal possibility or Pest watch to Confirmed alert from weather,
+  historical incidence, social media, news, or Krushi Go-Vidya alone.
+- AGRESCO/SAU recommendations and PPQS/CIB&RC label claims are downstream management
+  checks after topic selection; they do not prove crop presence or pest occurrence.
+{legacy_note}
+""".strip()
+
+
+def render_district_crop_evidence_reference(
+    month: str,
+    region: str,
+    district: str,
+    sowing_date: str = "",
+    crop_stage: str = "",
+) -> None:
+    """Explain the district-first evidence workflow used by deep research."""
+    selected_district = district or WHOLE_GUJARAT_DISTRICT
+    with st.expander(
+        f"Official district crop and pest-risk evidence: {selected_district}",
+        expanded=True,
+    ):
+        st.write(
+            "Topic research first verifies district crop presence, then crop timing, "
+            "current weather and pest evidence. Krushi Go-Vidya is no longer used as "
+            "the primary crop calendar."
         )
-    return "\n".join(lines).strip()
-
-
-def render_seasonal_calendar_reference(month: str, region: str) -> None:
-    """Show this month's Gujarat crop calendar and the AAU Krushi Go-Vidya link."""
-    months = load_crop_calendar()
-    info = months.get(month)
-    with st.expander(f"Gujarat crop calendar for {month} (grounds topic search)", expanded=False):
-        if not info:
-            st.info("No calendar entry found for this month.")
-        else:
-            st.caption(
-                f"Season: {info.get('season', '')}. {info.get('weather', '')} "
-                "Deep research uses this to keep topics tied to the real crop stage "
-                "and pest pressure this month."
+        left, right = st.columns(2)
+        with left:
+            st.markdown(f"**Region:** {region}")
+            st.markdown(f"**Season context:** {season_context_for_month(month)}")
+        with right:
+            st.markdown(f"**Timing basis:** {crop_timing_description(sowing_date, crop_stage)}")
+        if selected_district == "Vav-Tharad":
+            st.warning(
+                "Vav-Tharad became a separate district on 2 October 2025. Older crop "
+                "records may still be under Banaskantha and will be labelled only as a "
+                "legacy baseline, not as a current Vav-Tharad total."
             )
-            entries = _calendar_crops_for_region(info.get("crops", []), region) or info.get("crops", [])
-            for entry in entries:
-                pests = ", ".join(entry.get("pests", []) or []) or "—"
-                st.markdown(
-                    f"**{entry.get('crop', '')}** — {entry.get('stage', '')}  \n"
-                    f"Pests: {pests}"
-                )
         st.markdown(
-            f"Source and monthly issues: [AAU Krushi Go-Vidya]({KRUSHI_GOVIDYA_URL}) "
-            "(open the current month's issue for the full Gujarati farm calendar)."
+            "Official inputs: "
+            f"[Gujarat DES crop records]({GUJARAT_DES_CROP_DATA_URL}) · "
+            f"[ICAR-CRIDA district plans]({CRIDA_DISTRICT_PLAN_URL}) · "
+            f"[IMD district agromet bulletins]({IMD_DISTRICT_AGROMET_URL}) · "
+            f"[ICAR-NRIIPM/NPSS]({NRIIPM_DATABASES_URL})"
+        )
+        st.caption(
+            "Seasonal possibility = expected window; Pest watch = stage + weather risk; "
+            "Confirmed alert = current official surveillance/advisory or stated field observation."
         )
 
 
-def render_agresco_recommendation_helper(crop_default: str = "", pest_default: str = "") -> str:
+def render_agresco_recommendation_helper(
+    crop_default: str = "",
+    pest_default: str = "",
+    key_prefix: str = "topic",
+) -> str:
     records = load_agresco_recommendations()
-    st.session_state.setdefault("agresco_block", "")
+    block_key = f"{key_prefix}_agresco_block"
+    matches_key = f"{key_prefix}_agresco_matches"
+    selected_key = f"{key_prefix}_agresco_selected_indices"
+    crop_key = f"{key_prefix}_agresco_crop_query"
+    pest_key = f"{key_prefix}_agresco_pest_query"
+    st.session_state.setdefault(block_key, "")
+    st.session_state.setdefault(crop_key, crop_default or "")
+    st.session_state.setdefault(pest_key, pest_default or "")
 
     with st.expander("Gujarat University Recommendations (AGRESCO)", expanded=False):
         if not records:
@@ -1219,7 +1332,7 @@ def render_agresco_recommendation_helper(crop_default: str = "", pest_default: s
                 "agresco_recommendations.json to the app to enable official "
                 "Gujarat university recommendations."
             )
-            st.session_state["agresco_block"] = ""
+            st.session_state[block_key] = ""
             return ""
 
         years = sorted({rec.get("year", "") for rec in records if rec.get("year")})
@@ -1231,29 +1344,64 @@ def render_agresco_recommendation_helper(crop_default: str = "", pest_default: s
         with col_crop:
             crop_query = st.text_input(
                 "Crop for university recommendation search",
-                value=crop_default,
-                key="agresco_crop_query",
+                key=crop_key,
             )
         with col_pest:
             pest_query = st.text_input(
                 "Pest / problem for university recommendation search",
-                value=pest_default,
                 placeholder="Example: whitefly, fruit borer, mites, wilt",
-                key="agresco_pest_query",
+                key=pest_key,
             )
 
-        if st.button("Find official university recommendations", key="agresco_search"):
+        if st.button(
+            "Find official university recommendations",
+            key=f"{key_prefix}_agresco_search",
+        ):
             matches = search_agresco_recommendations(records, crop_query, pest_query)
-            st.session_state["agresco_matches"] = matches
-            st.session_state["agresco_block"] = format_agresco_for_prompt(matches)
+            st.session_state[matches_key] = matches
+            st.session_state[selected_key] = list(range(len(matches)))
+            st.session_state[block_key] = format_agresco_for_prompt(matches)
 
-        matches = st.session_state.get("agresco_matches", [])
+        matches = st.session_state.get(matches_key, [])
         if matches:
-            st.success(
-                f"{len(matches)} official recommendation(s) will be shared with the "
-                "article as trusted Gujarat university guidance."
+            options = list(range(len(matches)))
+            current_selection = st.session_state.get(selected_key, options)
+            st.session_state[selected_key] = [
+                index for index in current_selection if index in options
+            ]
+
+            def recommendation_option(index: int) -> str:
+                rec = matches[index]
+                meta = ", ".join(
+                    filter(
+                        None,
+                        [rec.get("year", ""), rec.get("university", ""), rec.get("section", "")],
+                    )
+                )
+                return f"{rec.get('title', '')} | {meta or 'AGRESCO'} | page {rec.get('source_page', '')}"
+
+            st.caption(
+                "The best matching recommendations are preselected. Keep only the "
+                "recommendations you want the article to use."
             )
-            for rec in matches:
+            selected_indices = st.multiselect(
+                "Select official university recommendations for the article",
+                options=options,
+                format_func=recommendation_option,
+                key=selected_key,
+            )
+            selected_matches = [matches[index] for index in selected_indices]
+            st.session_state[block_key] = format_agresco_for_prompt(selected_matches)
+
+            if selected_matches:
+                st.success(
+                    f"{len(selected_matches)} selected recommendation(s) will be shared "
+                    "with the article as trusted Gujarat university guidance."
+                )
+            else:
+                st.info("No AGRESCO recommendation selected for this article.")
+
+            for rec in selected_matches:
                 meta = ", ".join(
                     filter(None, [rec.get("year", ""), rec.get("university", ""), rec.get("section", "")])
                 )
@@ -1262,13 +1410,13 @@ def render_agresco_recommendation_helper(crop_default: str = "", pest_default: s
                     st.write(rec["recommendation_en"])
                 if rec.get("recommendation_gu"):
                     st.caption("Gujarati (raw extract for reference): " + rec["recommendation_gu"])
-        elif "agresco_matches" in st.session_state:
+        elif matches_key in st.session_state:
             st.info(
                 "No matching university recommendation found for this crop/problem. "
                 "The article will still use your other research."
             )
 
-    return st.session_state.get("agresco_block", "")
+    return st.session_state.get(block_key, "")
 
 
 def format_verified_chemicals_for_prompt(selected_rows) -> str:
@@ -1445,32 +1593,61 @@ def render_article_compliance(
         )
 
 
-def current_problem_research_guide(month: str, region: str) -> str:
+def current_problem_research_guide(
+    month: str,
+    region: str,
+    district: str = WHOLE_GUJARAT_DISTRICT,
+    crop_focus: str = "",
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
+) -> str:
     current_date = datetime.now().strftime("%d %B %Y")
-    calendar_block = seasonal_calendar_context(month, region)
-    calendar_section = f"\n{calendar_block}\n" if calendar_block else ""
+    evidence_block = district_crop_research_context(
+        month,
+        region,
+        district,
+        crop_focus,
+        sowing_date,
+        crop_stage,
+        weather_notes,
+    )
+    district_field_rule = (
+        "Use the exact selected district name in English in every topic row."
+        if district != WHOLE_GUJARAT_DISTRICT
+        else "Use one specific Gujarat district name in English in every topic row."
+    )
     return f"""
 Current-problem discovery rules:
 - Current date for research context: {current_date}.
-- Treat this as real farmer-problem discovery for {month}, not generic topic brainstorming.
-{calendar_section}
-- Use the GUJARAT_SEASONAL_CALENDAR above as the primary anchor: pick problems that
-  fit the crops, crop stages, and pest/disease pressure listed for this month and
-  region. You may add other current problems if web evidence supports them.
-- Every topic must name a specific crop, a specific Gujarat sub-region, the crop
-  stage, and a current field symptom. Reject any topic that cannot state all four.
-- Search current web context first: IMD/agromet advisories, Gujarat agricultural
-  university/KVK advisories, state agriculture advisories, recent agriculture news,
-  rainfall/monsoon updates, mandi/market/input reports, and credible farmer-facing
-  digital agriculture sources.
+- Treat this as district crop verification and pest-risk assessment for {month},
+  not generic topic brainstorming.
+
+{evidence_block}
+
+Required execution order:
+1. Build a district crop shortlist from official government records and show the
+   source year(s). If an official record cannot be accessed, say DATA GAP and do not
+   invent acreage, production, rank or crop presence.
+2. Keep only crops plausibly active in {month} using the official sowing/phenology
+   window plus any user-supplied planting date or crop stage.
+3. Retrieve current district weather/agromet information and explain only how it
+   changes stage timing or pest suitability.
+4. Match crop + vulnerable stage + weather with known insect/mite/pest windows.
+5. Search current official advisories or surveillance before using Confirmed alert.
+6. Rank article topics only after completing steps 1-5.
+
+- Every topic must name a specific crop, the selected district, crop stage, a
+  farmer-recognizable symptom and an evidence status. Reject any topic that cannot.
+- Search official/government/university sources first. Farmer posts, trends, YouTube,
+  general news and Krushi Go-Vidya may be used only as secondary signals.
 - If using trends, social posts, YouTube, or local media signals, use them only as
   weak signals and corroborate with official, university/KVK, weather, market, or
   multiple news sources.
 - For "Whole Gujarat", compare South Gujarat, Saurashtra, Central/Middle Gujarat,
   North Gujarat, and Kutch separately before ranking topics.
-- For a selected sub-region such as {region}, focus on that sub-region's crops,
-  districts, rainfall pattern, crop stage, pest/disease pressure, irrigation stress,
-  soil/salinity/wind/dust issues, market pressure, and farmer-visible symptoms.
+- For {district}, focus on its recorded crops, local crop stage, rainfall, humidity,
+  temperature, irrigation, soil/dust conditions and farmer-visible symptoms.
 - Do not suggest random evergreen topics such as generic IPM, generic nutrient
   management, or generic technology unless there is current regional evidence that
   farmers are facing that problem now.
@@ -1478,22 +1655,34 @@ Current-problem discovery rules:
   or village this month."
 - Rank topics by farmer urgency, evidence strength, regional specificity, seasonal
   timing, magazine usefulness, and safety of recommendations.
+- Do not include a chemical pesticide name or dose in topic research. AGRESCO and
+  PPQS/CIB&RC verification will be performed after the user selects a topic.
 
-At the top of the response, include this exact structured section so the app can
-make topic selection easy:
+Start the response with this district baseline section:
+DISTRICT_CROP_EVIDENCE
+CROP 1 | Crop in English | District | Government source and URL | Source year(s) | Area/production evidence or "recorded; value unavailable" | Current-season status
+Continue only for crops that pass the official crop-presence gate.
+
+Then include this exact topic section so the app can make selection easy:
 TOPIC_OPTIONS
-TOPIC 1 | Gujarati title | Region/sub-region | Main crop | Current farmer problem | Evidence confidence /10
-TOPIC 2 | Gujarati title | Region/sub-region | Main crop | Current farmer problem | Evidence confidence /10
-Continue for 8 to 10 topics.
+TOPIC 1 | Gujarati title | District in English | Main crop (English label-claim name) | Pest/problem (English search term) | Crop stage | Seasonal possibility/Pest watch/Confirmed alert | Evidence confidence /10
+TOPIC 2 | Gujarati title | District in English | Main crop (English label-claim name) | Pest/problem (English search term) | Crop stage | Seasonal possibility/Pest watch/Confirmed alert | Evidence confidence /10
+Return 5 to 10 topics when the evidence supports them. Never pad the list with an
+unverified crop or pest claim. {district_field_rule}
+
+Keep the title in Gujarati, but write the Main crop and Pest/problem fields in
+English so the app can search PPQS/CIB&RC label claims and AGRESCO records after
+the user selects a topic.
 
 After TOPIC_OPTIONS, provide a ranked evidence pack. For every topic include:
-- Current farmer problem being addressed
-- Region/sub-region and important districts if known
-- Crop stage or seasonal timing
+- Exact district crop-record source, URL, year(s) and data freshness
+- Why the crop is considered active now and whether the stage is observed or estimated
+- Current district weather/agromet source and weather-to-risk reasoning
+- Pest evidence status and the evidence needed to upgrade it
 - Field symptoms farmers may recognize
 - Why this is a current {month} problem, not a random topic
-- Source signal summary: official, university/KVK, government, weather, market,
-  news, farmer trend, or general web
+- Current official advisory/surveillance evidence, or an explicit statement that none
+  was found
 - Caution: what must be locally verified before publication
 """.strip()
 
@@ -1505,6 +1694,10 @@ def topic_research_prompt(
     crop_focus: str,
     manual_title: str = "",
     search_details: str = "",
+    district: str = WHOLE_GUJARAT_DISTRICT,
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati agriculture magazines.
@@ -1517,10 +1710,10 @@ Crop focus, if any: {crop_focus or "No specific crop focus"}
 
 {manual_search_context(manual_title, search_details)}
 
-{current_problem_research_guide(month, region)}
+{current_problem_research_guide(month, region, district, crop_focus, sowing_date, crop_stage, weather_notes)}
 
 Research priorities:
-- Selected Gujarat region and sub-region-specific farmer problems
+- Selected district-specific farmer problems and officially recorded crops
 - Agricultural acarology and agricultural entomology
 - Current pest and mite problems
 - Seasonal crop stage and month-wise agricultural activity
@@ -1536,15 +1729,15 @@ First create a deep research pack using multiple search angles:
 1. Current pest/mite relevance
 2. Crop stage and seasonal activity
 3. Month/weather connection
-4. Selected Gujarat region and sub-region relevance
+4. Selected district relevance and official crop-presence evidence
 5. Field observations farmers may recognize
 6. Scientific background in simple language
 7. Natural enemies and integrated management
 8. Farmer benefit and practical relevance
 
-Return 8 to 10 topic options using the required TOPIC_OPTIONS format above.
+Return 5 to 10 topic options using the required TOPIC_OPTIONS format above.
 For each topic, keep the Gujarati title specific to a real current farmer
-problem, crop, and Gujarat region/sub-region.
+problem, crop, and selected Gujarat district.
 
 Do not select the final article topic automatically. The user will choose from
 the ranked suggested topics in the app. After the topic options, provide a useful
@@ -1823,6 +2016,10 @@ def story_research_prompt(
     crop_focus: str,
     topic_hint: str,
     search_details: str = "",
+    district: str = WHOLE_GUJARAT_DISTRICT,
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
 ) -> str:
     return f"""
 You are a senior agricultural research assistant for Gujarati agriculture magazines.
@@ -1841,12 +2038,12 @@ Research assignment:
 
 {manual_search_context(topic_hint, search_details)}
 
-{current_problem_research_guide(month, region)}
+{current_problem_research_guide(month, region, district, crop_focus, sowing_date, crop_stage, weather_notes)}
 
 Research priorities:
 - Current and prevailing crop problems
 - Agricultural acarology and agricultural entomology relevance
-- Selected Gujarat region and sub-region-specific farming conditions
+- Selected district-specific farming conditions and officially recorded crops
 - Crop stage, weather influence, and seasonal activity
 - Farmer observations and field-level symptoms
 - Scientific reason behind the problem
@@ -1860,13 +2057,13 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite or crop problem relevance
 - Month, weather, and crop-stage connection
-- Selected Gujarat region and sub-region field context
+- Selected district field context
 - Farmer-recognizable observations for a story opening
 - Science that can be explained simply after the field situation
 - Natural enemies, IPM, monitoring, and practical decision support
 - Farmer benefit: yield, quality, cost reduction, sustainability, and profit
 
-Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+Return 5 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
 format above. Do not choose a final topic. Each topic must be a real current
 farmer problem, not a general evergreen theme.
 
@@ -2112,6 +2309,10 @@ def farm_wisdom_research_prompt(
     season_context: str,
     target_magazine: str,
     search_details: str = "",
+    district: str = WHOLE_GUJARAT_DISTRICT,
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati farmer-oriented magazines.
@@ -2142,12 +2343,12 @@ Tab 4 magazine requirement:
 - Research should support a full Gujarati magazine feature with scene,
   observation, discovery, reflection, farmer meaning, and practical depth.
 
-{current_problem_research_guide(month, region)}
+{current_problem_research_guide(month, region, district, crop_focus, sowing_date, crop_stage, weather_notes)}
 
 Research priorities:
 - Current and prevailing crop, pest, mite, weather, or field observation issues
 - Agricultural acarology and entomology relevance when useful
-- Selected Gujarat region and sub-region farming realities
+- Selected district farming realities and officially recorded crops
 - Seasonal field conditions, crop stage, weather, soil, dust, irrigation, and
   farmer habits
 - Practical observations farmers may recognize
@@ -2162,13 +2363,13 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite, crop, weather, or field-observation relevance
 - Month, season, crop stage, and weather connection
-- Selected Gujarat region and sub-region farming reality
+- Selected district farming reality
 - Farm habits, orchard/field scenes, soil, dust, moisture, and natural balance
 - Scientific explanation that can emerge from observation
 - Natural enemies, IPM, patient monitoring, and practical wisdom
 - Farmer benefit through better observation and wiser decisions
 
-Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+Return 5 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
 format above. Do not choose a final topic. Each topic must be a real current
 farmer problem, not a general evergreen theme.
 
@@ -2443,6 +2644,10 @@ def field_discovery_research_prompt(
     season_context: str,
     target_magazine: str,
     search_details: str = "",
+    district: str = WHOLE_GUJARAT_DISTRICT,
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati long-form agricultural
@@ -2464,13 +2669,13 @@ Research assignment:
 
 {manual_search_context(topic_hint, search_details)}
 
-{current_problem_research_guide(month, region)}
+{current_problem_research_guide(month, region, district, crop_focus, sowing_date, crop_stage, weather_notes)}
 
 Research priorities:
 - Current crop, pest, mite, weather, field, orchard, or seasonal observation
   issues relevant to farmers
 - Agricultural acarology and entomology relevance when useful
-- Selected Gujarat region and sub-region farming conditions
+- Selected district farming conditions and officially recorded crops
 - Visual scene details: light, weather, crop appearance, leaf condition, dust,
   humidity, dry winds, seasonal transition, farmer activity, and field texture
 - Observations that can create curiosity before explanation
@@ -2485,14 +2690,14 @@ Build a deep research pack using several search angles before presenting topic
 options:
 - Current pest/mite, crop, weather, or field-scene relevance
 - Month, season, crop stage, and weather connection
-- Selected Gujarat region and sub-region field/orchard context
+- Selected district field/orchard context
 - Visual clues that can carry the opening scene
 - Observations and questions that delay discovery naturally
 - Scientific explanation that can appear after curiosity is built
 - Natural enemies, IPM, monitoring, and practical meaning
 - Farmer benefit through observation, timely decisions, quality, yield, and profit
 
-Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+Return 5 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
 format above. Do not choose a final topic. Each topic must be a real current
 farmer problem, not a general evergreen theme.
 
@@ -2814,6 +3019,10 @@ def farmer_engagement_research_prompt(
     season_context: str,
     target_magazine: str,
     search_details: str = "",
+    district: str = WHOLE_GUJARAT_DISTRICT,
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
 ) -> str:
     return f"""
 You are an agricultural research assistant for Gujarati farmer-oriented
@@ -2833,7 +3042,7 @@ Research assignment:
 
 {manual_search_context(topic_hint, search_details)}
 
-{current_problem_research_guide(month, region)}
+{current_problem_research_guide(month, region, district, crop_focus, sowing_date, crop_stage, weather_notes)}
 
 Research priorities:
 - Problems farmers are visibly facing now in the selected Gujarat region
@@ -2846,7 +3055,7 @@ Research priorities:
 - Official, university/KVK, weather, market, research, news, and farmer-trend
   signals where useful
 
-Return 8 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
+Return 5 to 10 Gujarati article topic options using the required TOPIC_OPTIONS
 format above. Do not choose a final topic. Each topic must address a current
 farmer problem and must be suitable for a farmer-engaging magazine article.
 
@@ -3090,6 +3299,10 @@ def newspaper_research_prompt(
     newspaper_style: str,
     target_publication: str,
     search_details: str = "",
+    district: str = WHOLE_GUJARAT_DISTRICT,
+    sowing_date: str = "",
+    crop_stage: str = "",
+    weather_notes: str = "",
 ) -> str:
     style_note = NEWSPAPER_STYLE_NOTES[newspaper_style]
     return f"""
@@ -3108,7 +3321,7 @@ Assignment:
 
 {manual_search_context(topic_hint, search_details)}
 
-{current_problem_research_guide(month, region)}
+{current_problem_research_guide(month, region, district, crop_focus, sowing_date, crop_stage, weather_notes)}
 
 Research priorities:
 - A current farmer problem relevant to this week, month, crop stage, and region.
@@ -3122,7 +3335,7 @@ Research priorities:
 - Never invent a local outbreak, pesticide dose, quote, statistic, or official
   advisory.
 
-Return 8 to 10 Gujarati newspaper topic options using the required TOPIC_OPTIONS
+Return 5 to 10 Gujarati newspaper topic options using the required TOPIC_OPTIONS
 format. Do not choose the final topic. Each option must be timely, farmer-first,
 and suitable for the selected newspaper style.
 
@@ -3537,6 +3750,25 @@ def selected_topic_context(
         parts.append("\n\n".join(manual_parts))
     if research_notes:
         parts.append(f"Research notes:\n{research_notes}")
+    _, crop_stage, pest_status, confidence = topic_risk_metadata(topic)
+    if pest_status:
+        parts.append(
+            "Pest-evidence language guardrail:\n"
+            f"- Crop stage in selected topic: {crop_stage or 'not stated'}\n"
+            f"- Evidence status: {pest_status}\n"
+            f"- Evidence confidence: {confidence or 'not stated'}\n"
+            "- Preserve this exact evidence level throughout drafting, review and final editing.\n"
+            "- Seasonal possibility and Pest watch are monitoring/risk language, not a "
+            "confirmed outbreak. Use Confirmed alert only when the research notes identify "
+            "the current official advisory/surveillance or the user's stated field observation."
+        )
+    else:
+        parts.append(
+            "Pest-evidence language guardrail:\n"
+            "Do not describe a pest attack or outbreak as confirmed unless the research "
+            "notes identify a current official district advisory/surveillance record or "
+            "the user explicitly supplied a field observation."
+        )
     return "\n\n".join(parts)
 
 
@@ -3578,6 +3810,67 @@ def extract_suggested_topics(research_notes: str) -> list[str]:
     return topics
 
 
+def extract_district_crop_evidence(research_notes: str) -> list[dict[str, str]]:
+    """Parse structured government crop-evidence rows from deep research."""
+    records = []
+    seen = set()
+    for raw_line in (research_notes or "").splitlines():
+        line = clean_topic_option(raw_line)
+        match = re.match(r"^CROP\s*\d+\s*(?:[:|\-–—]\s*)?(.*)$", line, re.IGNORECASE)
+        if not match:
+            continue
+        parts = [clean_topic_option(part) for part in match.group(1).split("|")]
+        if len(parts) < 2:
+            continue
+        crop = parts[0]
+        district = parts[1]
+        crop_key = normalize_crop_name(crop)
+        if not crop_key or crop_key in {"crop", "crop in english"} or crop_key in seen:
+            continue
+        seen.add(crop_key)
+        records.append(
+            {
+                "crop": crop,
+                "district": district,
+                "source": parts[2] if len(parts) > 2 else "",
+                "years": parts[3] if len(parts) > 3 else "",
+                "evidence": parts[4] if len(parts) > 4 else "",
+                "season_status": parts[5] if len(parts) > 5 else "",
+            }
+        )
+    return records
+
+
+def _district_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (value or "").casefold())
+
+
+def topic_matches_district(topic: str, district: str) -> bool:
+    """Require a structured topic row to carry the selected district."""
+    if not district or district == WHOLE_GUJARAT_DISTRICT:
+        return True
+    parts = [clean_topic_option(part) for part in (topic or "").split("|")]
+    if len(parts) < 2:
+        return False
+    expected = _district_token(district)
+    location = _district_token(parts[1])
+    return bool(expected and location and (expected in location or location in expected))
+
+
+def topic_matches_crop(topic: str, selected_crops: list[str]) -> bool:
+    if not selected_crops:
+        return False
+    parts = [clean_topic_option(part) for part in (topic or "").split("|")]
+    if len(parts) < 3:
+        return False
+    topic_crop = normalize_crop_name(parts[2])
+    for crop in selected_crops:
+        selected = normalize_crop_name(crop)
+        if selected and topic_crop and (selected in topic_crop or topic_crop in selected):
+            return True
+    return False
+
+
 def suggested_topic_selector(
     label: str,
     key: str,
@@ -3585,6 +3878,65 @@ def suggested_topic_selector(
     manual_title: str = "",
 ) -> str:
     topics = extract_suggested_topics(research_notes)
+    selected_district = st.session_state.get("research_district", WHOLE_GUJARAT_DISTRICT)
+    if selected_district != WHOLE_GUJARAT_DISTRICT:
+        district_topics = [
+            topic for topic in topics if topic_matches_district(topic, selected_district)
+        ]
+        if district_topics:
+            topics = district_topics
+            st.caption(f"Showing only topic rows tagged for {selected_district} district.")
+        elif topics:
+            topics = []
+            st.warning(
+                f"The research response did not return a structured topic row for "
+                f"{selected_district}. Re-run research; the app will not silently use "
+                "another district's crop topic."
+            )
+
+    crop_records = extract_district_crop_evidence(research_notes)
+    if selected_district != WHOLE_GUJARAT_DISTRICT:
+        crop_records = [
+            record
+            for record in crop_records
+            if topic_matches_district(
+                f"Crop evidence | {record.get('district', '')}",
+                selected_district,
+            )
+        ]
+    crop_options = [record["crop"] for record in crop_records]
+    if crop_options:
+        crop_filter_key = f"{key}_official_crop_filter"
+        previous = st.session_state.get(crop_filter_key)
+        if previous is None:
+            st.session_state[crop_filter_key] = crop_options
+        else:
+            kept = [crop for crop in previous if crop in crop_options]
+            st.session_state[crop_filter_key] = kept or crop_options
+        selected_crops = st.multiselect(
+            "Government-recorded active crops to use for topic recommendations",
+            options=crop_options,
+            key=crop_filter_key,
+        )
+        st.caption(
+            "Crop choices come from the DISTRICT_CROP_EVIDENCE section returned by "
+            "official-source research. Deselect crops you do not want."
+        )
+        topics = [topic for topic in topics if topic_matches_crop(topic, selected_crops)]
+        if not selected_crops:
+            st.info("Select at least one government-recorded crop to show topic options.")
+        elif not topics:
+            st.warning(
+                "No structured topic row matches the selected official crop(s). "
+                "Re-run research or change the crop selection."
+            )
+    elif topics:
+        topics = []
+        st.warning(
+            "The research response did not provide a parseable DISTRICT_CROP_EVIDENCE "
+            "crop row. Topic options are blocked so the app does not recommend crops "
+            "without the government-record evidence gate. Re-run deep research."
+        )
     manual_title = clean_topic_option(manual_title)
     if manual_title:
         manual_key = manual_title.lower()
@@ -3707,8 +4059,21 @@ def target_magazine_selector(
     return selected_magazine
 
 
-def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
-    st.session_state.setdefault("verified_label_claim_chemicals", "")
+def render_ppqs_label_claim_checker(
+    crop_default: str = "",
+    pest_default: str = "",
+    key_prefix: str = "topic",
+) -> str:
+    verified_key = f"{key_prefix}_ppqs_verified"
+    matched_key = f"{key_prefix}_ppqs_matched_df"
+    selected_rows_key = f"{key_prefix}_ppqs_selected_rows"
+    selected_indices_key = f"{key_prefix}_ppqs_selected_indices"
+    search_run_key = f"{key_prefix}_ppqs_search_has_run"
+    crop_key = f"{key_prefix}_ppqs_crop_query"
+    pest_key = f"{key_prefix}_ppqs_pest_query"
+    web_docs_key = f"{key_prefix}_ppqs_web_docs"
+
+    st.session_state.setdefault(verified_key, "")
     missing = []
     if pd is None:
         missing.append("pandas")
@@ -3719,11 +4084,11 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
 
     if pd is not None:
         st.session_state.setdefault("ppqs_label_df", _empty_ppqs_df())
-        st.session_state.setdefault("ppqs_matched_df", _empty_ppqs_df())
-        st.session_state.setdefault("ppqs_selected_rows", _empty_ppqs_df())
-    st.session_state.setdefault("ppqs_search_has_run", False)
-    if "ppqs_crop_query" not in st.session_state:
-        st.session_state["ppqs_crop_query"] = crop_default or ""
+        st.session_state.setdefault(matched_key, _empty_ppqs_df())
+        st.session_state.setdefault(selected_rows_key, _empty_ppqs_df())
+    st.session_state.setdefault(search_run_key, False)
+    st.session_state.setdefault(crop_key, crop_default or "")
+    st.session_state.setdefault(pest_key, pest_default or "")
 
     with st.expander("PPQS / CIB&RC Label Claim Checker", expanded=False):
         st.warning(
@@ -3736,7 +4101,7 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                 "Install missing packages before using the checker: "
                 + ", ".join(missing)
             )
-            return st.session_state.get("verified_label_claim_chemicals", "")
+            return st.session_state.get(verified_key, "")
 
         # Hybrid: load the saved label cache instantly on first entry, so the
         # checker works with no wait and even if ppqs.gov.in is unreachable.
@@ -3760,17 +4125,20 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
             st.caption(f"Using freshly downloaded label data (as of {data_as_of}).")
 
         st.markdown("**Option 1: Load directly from ppqs.gov.in**")
-        if st.button("Fetch Major Uses document list from PPQS website", key="ppqs_fetch_list"):
+        if st.button(
+            "Fetch Major Uses document list from PPQS website",
+            key=f"{key_prefix}_ppqs_fetch_list",
+        ):
             try:
                 with st.spinner("Reading the PPQS Major Uses page..."):
-                    st.session_state["ppqs_web_docs"] = fetch_ppqs_document_list()
-                if not st.session_state["ppqs_web_docs"]:
+                    st.session_state[web_docs_key] = fetch_ppqs_document_list()
+                if not st.session_state[web_docs_key]:
                     st.warning(
                         "No PDF links were found on the PPQS page. The page layout "
                         "may have changed; upload the PDF manually below."
                     )
             except PPQSBlockedError:
-                st.session_state["ppqs_web_docs"] = []
+                st.session_state[web_docs_key] = []
                 cached_df, cache_meta = load_ppqs_label_cache()
                 as_of = cache_meta.get("fetched", "")
                 st.warning(
@@ -3782,10 +4150,10 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                     "a fresh PDF you downloaded in your own browser."
                 )
             except Exception as exc:
-                st.session_state["ppqs_web_docs"] = []
+                st.session_state[web_docs_key] = []
                 st.error(f"Could not read the PPQS website: {exc}")
 
-        web_docs = st.session_state.get("ppqs_web_docs") or []
+        web_docs = st.session_state.get(web_docs_key) or []
         if web_docs:
             doc_titles = [doc["title"] for doc in web_docs]
             default_docs = [
@@ -3797,9 +4165,12 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                 "PPQS documents to load (insecticides is usually enough)",
                 doc_titles,
                 default=default_docs,
-                key="ppqs_web_doc_choice",
+                key=f"{key_prefix}_ppqs_web_doc_choice",
             )
-            if st.button("Download and parse selected PPQS documents", key="ppqs_web_parse"):
+            if st.button(
+                "Download and parse selected PPQS documents",
+                key=f"{key_prefix}_ppqs_web_parse",
+            ):
                 if not selected_doc_titles:
                     st.info("Select at least one PPQS document to download.")
                 else:
@@ -3826,11 +4197,11 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                             pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
                         )
                         st.session_state["ppqs_label_df"] = parsed_df
-                        st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
-                        st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
-                        st.session_state["verified_label_claim_chemicals"] = ""
-                        st.session_state["ppqs_selected_indices"] = []
-                        st.session_state["ppqs_search_has_run"] = False
+                        st.session_state[matched_key] = _empty_ppqs_df()
+                        st.session_state[selected_rows_key] = _empty_ppqs_df()
+                        st.session_state[verified_key] = ""
+                        st.session_state[selected_indices_key] = []
+                        st.session_state[search_run_key] = False
                         # Refresh the on-disk cache so later runs load instantly.
                         saved_date = save_ppqs_label_cache(parsed_df, selected_doc_titles)
                         st.session_state["ppqs_data_as_of"] = saved_date
@@ -3863,21 +4234,21 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
         uploaded_file = st.file_uploader(
             "Upload latest PPQS/CIB&RC Major Uses PDF",
             type=["pdf"],
-            key="ppqs_pdf_upload",
+            key=f"{key_prefix}_ppqs_pdf_upload",
         )
         crop_query = st.text_input(
             "Crop name for label claim search",
-            key="ppqs_crop_query",
+            key=crop_key,
         )
         pest_query = st.text_input(
             "Pest name for label claim search",
             placeholder="Example: thrips, fruit borer, mites, whitefly",
-            key="ppqs_pest_query",
+            key=pest_key,
         )
 
         parse_clicked = st.button(
             "Parse / Update Label Claim Database",
-            key="ppqs_parse_button",
+            key=f"{key_prefix}_ppqs_parse_button",
         )
         if parse_clicked:
             if uploaded_file is None:
@@ -3887,11 +4258,11 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                     with st.spinner("Parsing PPQS/CIB&RC label-claim PDF..."):
                         parsed_df = parse_ppqs_pdf(uploaded_file)
                     st.session_state["ppqs_label_df"] = parsed_df
-                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
-                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
-                    st.session_state["verified_label_claim_chemicals"] = ""
-                    st.session_state["ppqs_selected_indices"] = []
-                    st.session_state["ppqs_search_has_run"] = False
+                    st.session_state[matched_key] = _empty_ppqs_df()
+                    st.session_state[selected_rows_key] = _empty_ppqs_df()
+                    st.session_state[verified_key] = ""
+                    st.session_state[selected_indices_key] = []
+                    st.session_state[search_run_key] = False
                     if parsed_df.empty:
                         st.warning(
                             "No label-claim rows were extracted. The PDF may need "
@@ -3901,9 +4272,9 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                         st.success(f"Parsed {len(parsed_df)} label-claim rows.")
                 except Exception as exc:
                     st.session_state["ppqs_label_df"] = _empty_ppqs_df()
-                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
-                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
-                    st.session_state["verified_label_claim_chemicals"] = ""
+                    st.session_state[matched_key] = _empty_ppqs_df()
+                    st.session_state[selected_rows_key] = _empty_ppqs_df()
+                    st.session_state[verified_key] = ""
                     st.error(f"Could not parse the PPQS PDF: {exc}")
 
         label_df = st.session_state.get("ppqs_label_df", _empty_ppqs_df())
@@ -3917,7 +4288,7 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
 
         search_clicked = st.button(
             "Search Label Claim Pesticides",
-            key="ppqs_search_button",
+            key=f"{key_prefix}_ppqs_search_button",
         )
         if search_clicked:
             if not isinstance(label_df, pd.DataFrame) or label_df.empty:
@@ -3927,17 +4298,17 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
             else:
                 try:
                     matched_df = search_label_claims(label_df, crop_query, pest_query)
-                    st.session_state["ppqs_matched_df"] = matched_df
-                    st.session_state["ppqs_selected_rows"] = _empty_ppqs_df()
-                    st.session_state["verified_label_claim_chemicals"] = ""
-                    st.session_state["ppqs_selected_indices"] = auto_select_label_claims(matched_df)
-                    st.session_state["ppqs_search_has_run"] = True
+                    st.session_state[matched_key] = matched_df
+                    st.session_state[selected_rows_key] = _empty_ppqs_df()
+                    st.session_state[verified_key] = ""
+                    st.session_state[selected_indices_key] = auto_select_label_claims(matched_df)
+                    st.session_state[search_run_key] = True
                 except Exception as exc:
-                    st.session_state["ppqs_matched_df"] = _empty_ppqs_df()
-                    st.session_state["verified_label_claim_chemicals"] = ""
+                    st.session_state[matched_key] = _empty_ppqs_df()
+                    st.session_state[verified_key] = ""
                     st.error(f"Could not search label-claim rows: {exc}")
 
-        matched_df = st.session_state.get("ppqs_matched_df", _empty_ppqs_df())
+        matched_df = st.session_state.get(matched_key, _empty_ppqs_df())
         if isinstance(matched_df, pd.DataFrame) and not matched_df.empty:
             display_columns = [
                 column
@@ -3954,7 +4325,7 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                 data=matched_df.to_csv(index=False).encode("utf-8-sig"),
                 file_name="ppqs_label_claim_matches.csv",
                 mime="text/csv",
-                key="ppqs_download_matches",
+                key=f"{key_prefix}_ppqs_download_matches",
             )
 
             if "match_type" in matched_df.columns and matched_df["match_type"].str.contains("-only", case=False, na=False).any():
@@ -3963,8 +4334,8 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                 st.warning("Some extracted rows need manual verification against the source PDF.")
 
             options = matched_df.index.tolist()
-            current_selection = st.session_state.get("ppqs_selected_indices", [])
-            st.session_state["ppqs_selected_indices"] = [
+            current_selection = st.session_state.get(selected_indices_key, [])
+            st.session_state[selected_indices_key] = [
                 index for index in current_selection if index in options
             ]
 
@@ -3986,29 +4357,149 @@ def render_ppqs_label_claim_checker(crop_default: str = "") -> str:
                 "Select pesticides allowed for the article",
                 options=options,
                 format_func=label_claim_option,
-                key="ppqs_selected_indices",
+                key=selected_indices_key,
             )
             selected_df = (
                 matched_df.loc[selected_indices].reset_index(drop=True)
                 if selected_indices
                 else _empty_ppqs_df()
             )
-            st.session_state["ppqs_selected_rows"] = selected_df
-            st.session_state["verified_label_claim_chemicals"] = (
+            st.session_state[selected_rows_key] = selected_df
+            st.session_state[verified_key] = (
                 format_verified_chemicals_for_prompt(selected_df)
             )
             if selected_indices:
                 st.success(f"{len(selected_indices)} verified label-claim row(s) selected for article prompts.")
             else:
                 st.info("No label-claim pesticide selected. Chemical recommendations will be excluded.")
-        elif st.session_state.get("ppqs_search_has_run"):
+        elif st.session_state.get(search_run_key):
             st.warning(
                 "No matching label-claim pesticide found in uploaded PPQS PDF for "
                 "this crop-pest query. Chemical recommendation will be excluded "
                 "unless manually verified."
             )
 
-    return st.session_state.get("verified_label_claim_chemicals", "")
+    return st.session_state.get(verified_key, "")
+
+
+def topic_evidence_defaults(selected_topic: str, crop_fallback: str = "") -> tuple[str, str]:
+    """Read the crop and problem fields from a structured TOPIC_OPTIONS row."""
+    parts = [clean_topic_option(part) for part in (selected_topic or "").split("|")]
+    crop = parts[2] if len(parts) >= 4 else ""
+    pest = parts[3] if len(parts) >= 4 else ""
+
+    crop = re.sub(r"^(?:main\s+)?crop\s*[:\-–—]?\s*", "", crop, flags=re.IGNORECASE).strip()
+    pest = re.sub(
+        r"^(?:current\s+farmer\s+)?(?:pest|problem)\s*[:\-–—]?\s*",
+        "",
+        pest,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    if not crop or crop.casefold() in {"main crop", "crop"}:
+        crop = (crop_fallback or "").strip()
+    if pest.casefold() in {"current farmer problem", "pest", "problem"}:
+        pest = ""
+    return crop, pest
+
+
+def topic_risk_metadata(selected_topic: str) -> tuple[str, str, str, str]:
+    """Return district, crop stage, pest status and confidence from a topic row."""
+    parts = [clean_topic_option(part) for part in (selected_topic or "").split("|")]
+    district = parts[1] if len(parts) > 1 else ""
+    crop_stage = parts[4] if len(parts) > 4 else ""
+    pest_status = parts[5] if len(parts) > 5 else ""
+    confidence = parts[6] if len(parts) > 6 else ""
+    return district, crop_stage, pest_status, confidence
+
+
+def reset_topic_evidence_state(
+    key_prefix: str,
+    selected_topic: str,
+    crop_default: str,
+    pest_default: str,
+) -> None:
+    """Clear old evidence selections when the user changes the chosen topic."""
+    signature_key = f"{key_prefix}_evidence_topic_signature"
+    signature = " | ".join(
+        [
+            (selected_topic or "").strip(),
+            (crop_default or "").strip(),
+            (pest_default or "").strip(),
+        ]
+    )
+    if st.session_state.get(signature_key) == signature:
+        return
+
+    for key in [
+        f"{key_prefix}_ppqs_matched_df",
+        f"{key_prefix}_ppqs_selected_rows",
+        f"{key_prefix}_ppqs_selected_indices",
+        f"{key_prefix}_ppqs_search_has_run",
+        f"{key_prefix}_ppqs_verified",
+        f"{key_prefix}_agresco_matches",
+        f"{key_prefix}_agresco_selected_indices",
+        f"{key_prefix}_agresco_block",
+    ]:
+        st.session_state.pop(key, None)
+
+    st.session_state[f"{key_prefix}_ppqs_crop_query"] = crop_default or ""
+    st.session_state[f"{key_prefix}_ppqs_pest_query"] = pest_default or ""
+    st.session_state[f"{key_prefix}_agresco_crop_query"] = crop_default or ""
+    st.session_state[f"{key_prefix}_agresco_pest_query"] = pest_default or ""
+    st.session_state[signature_key] = signature
+
+
+def render_topic_evidence_selectors(
+    key_prefix: str,
+    selected_topic: str,
+    crop_fallback: str = "",
+) -> tuple[str, str]:
+    """Render topic-specific PPQS and AGRESCO selectors after topic selection."""
+    if not (selected_topic or "").strip():
+        return "", ""
+
+    crop_default, pest_default = topic_evidence_defaults(selected_topic, crop_fallback)
+    topic_district, crop_stage, pest_status, confidence = topic_risk_metadata(selected_topic)
+    reset_topic_evidence_state(
+        key_prefix,
+        selected_topic,
+        crop_default,
+        pest_default,
+    )
+
+    st.markdown("### Topic-based verified recommendations")
+    status_line = " · ".join(
+        filter(None, [topic_district, crop_stage, pest_status, confidence])
+    )
+    if status_line:
+        if "confirmed alert" in pest_status.casefold():
+            st.warning(f"Topic evidence: {status_line}")
+        elif "pest watch" in pest_status.casefold():
+            st.info(f"Topic evidence: {status_line}")
+        else:
+            st.caption(f"Topic evidence: {status_line}")
+    if pest_status and "confirmed alert" not in pest_status.casefold():
+        st.caption(
+            "This is a monitoring/risk topic, not a confirmed outbreak. The article "
+            "must preserve that distinction."
+        )
+    st.caption(
+        "The crop and pest/problem fields below are taken from the selected topic. "
+        "Edit them in English if needed, then search and select only the evidence "
+        "you want the article to use."
+    )
+    verified_chemicals = render_ppqs_label_claim_checker(
+        crop_default,
+        pest_default,
+        key_prefix,
+    )
+    agresco_block = render_agresco_recommendation_helper(
+        crop_default,
+        pest_default,
+        key_prefix,
+    )
+    return verified_chemicals, agresco_block
 
 
 def render_newspaper_tab(
@@ -4026,8 +4517,13 @@ def render_newspaper_tab(
     subject_area: str,
     crop_focus: str,
     article_length: str,
-    verified_label_claim_chemicals: str,
+    district: str,
+    sowing_date: str,
+    crop_stage: str,
+    weather_notes: str,
 ) -> None:
+    verified_label_claim_chemicals = st.session_state.get("newspaper_ppqs_verified", "")
+    agresco_block = st.session_state.get("newspaper_agresco_block", "")
     st.subheader("Gujarati Weekly Newspaper Writing Workflow")
     st.write(
         "This tab uses the same deep-research, drafting, review, rewrite, and "
@@ -4094,6 +4590,10 @@ def render_newspaper_tab(
                     newspaper_style,
                     target_publication,
                     search_details,
+                    district=district,
+                    sowing_date=sowing_date,
+                    crop_stage=crop_stage,
+                    weather_notes=weather_notes,
                 ),
                 use_search=research_provider == PROVIDER_GEMINI,
                 temperature=0.35,
@@ -4130,6 +4630,11 @@ def render_newspaper_tab(
             height=300,
             key="newspaper_research_notes",
         )
+        verified_label_claim_chemicals, agresco_block = render_topic_evidence_selectors(
+            "newspaper",
+            selected_topic,
+            st.session_state.get("newspaper_saved_crop_focus", newspaper_crop),
+        )
 
         if st.button(
             "Use this research to write newspaper article",
@@ -4143,6 +4648,10 @@ def render_newspaper_tab(
                     research_notes,
                     st.session_state.get("newspaper_saved_topic_hint", ""),
                     st.session_state.get("newspaper_saved_search_details", ""),
+                )
+                selected_context = with_reference_recommendations(
+                    selected_context,
+                    agresco_block,
                 )
                 with st.spinner("Writing the Gujarati newspaper article..."):
                     article, sources = generate_text(
@@ -4396,21 +4905,69 @@ def main() -> None:
             index=datetime.now().month - 1,
         )
     with col2:
-        region = st.selectbox("Region", REGIONS)
+        district = st.selectbox(
+            "Gujarat district",
+            GUJARAT_DISTRICTS,
+            index=GUJARAT_DISTRICTS.index("Navsari"),
+            key="research_district",
+        )
+
+    region = district_region(district)
+    st.caption(f"Agricultural region is derived automatically: **{region}**")
 
     subject_area = st.selectbox("Subject area", SUBJECT_AREAS)
     crop_focus = st.text_input(
-        "Crop focus optional",
-        placeholder="Example: mango, okra, sugarcane, fruit crops, vegetables",
+        "Crop focus optional — leave blank to rank official district crops",
+        placeholder="Example: mango, okra or sugarcane; blank uses government district records",
+        key="global_crop_focus",
     )
+
+    timing_col, weather_col = st.columns(2)
+    with timing_col:
+        timing_mode = st.selectbox(
+            "Crop timing basis",
+            CROP_TIMING_MODES,
+            key="crop_timing_mode",
+        )
+        sowing_date = ""
+        crop_stage = ""
+        if timing_mode == "I know the sowing or transplanting date":
+            selected_sowing_date = st.date_input(
+                "Actual sowing/transplanting date",
+                value=datetime.now().date(),
+                max_value=datetime.now().date(),
+                key="actual_sowing_date",
+            )
+            sowing_date = selected_sowing_date.isoformat()
+        elif timing_mode == "I know the current crop stage":
+            crop_stage = st.selectbox(
+                "Current crop stage",
+                CROP_STAGE_OPTIONS,
+                key="known_crop_stage",
+            )
+    with weather_col:
+        weather_notes = st.text_area(
+            "Optional field or weather observation",
+            placeholder=(
+                "Example: continuous rain, hot dry wind, high humidity, waterlogging, "
+                "or pest observed during field scouting"
+            ),
+            height=122,
+            key="district_weather_notes",
+        )
+
     article_length = st.selectbox("Article length", ARTICLE_LENGTHS, index=0)
     st.caption(
         "700, 800, 900, and 1000-word choices are available. For Krushi Prabhat, "
         "select 700 words to follow the publication notice; the DOCX is editable Gujarati Unicode."
     )
-    verified_label_claim_chemicals = render_ppqs_label_claim_checker(crop_focus)
-    agresco_block = render_agresco_recommendation_helper(crop_focus)
-    render_seasonal_calendar_reference(month, region)
+    render_district_crop_evidence_reference(
+        month,
+        region,
+        district,
+        sowing_date,
+        crop_stage,
+    )
 
     client = build_client(api_keys[PROVIDER_GEMINI])
     (
@@ -4432,6 +4989,8 @@ def main() -> None:
     )
 
     with tab_classic:
+        verified_label_claim_chemicals = st.session_state.get("classic_ppqs_verified", "")
+        agresco_block = st.session_state.get("classic_agresco_block", "")
         st.subheader("Current Workflow")
         st.write(
             "Use this tab for the original topic discovery, Gujarati article draft, "
@@ -4448,6 +5007,10 @@ def main() -> None:
                     crop_focus,
                     classic_manual_title,
                     classic_search_details,
+                    district=district,
+                    sowing_date=sowing_date,
+                    crop_stage=crop_stage,
+                    weather_notes=weather_notes,
                 )
                 topics, sources = safe_generate_text(
                     client,
@@ -4481,6 +5044,11 @@ def main() -> None:
                 value=st.session_state["topics"],
                 height=260,
                 key="classic_selected_topic_notes",
+            )
+            verified_label_claim_chemicals, agresco_block = render_topic_evidence_selectors(
+                "classic",
+                selected_topic_title,
+                crop_focus,
             )
             selected_target_magazine = target_magazine_selector(
                 "classic_target_magazine",
@@ -4678,6 +5246,8 @@ def main() -> None:
                 )
 
     with tab_story:
+        verified_label_claim_chemicals = st.session_state.get("story_ppqs_verified", "")
+        agresco_block = st.session_state.get("story_agresco_block", "")
         st.subheader("Story + Science Prompt Workflow")
         st.write(
             "This tab adds your attached prompt style: field-story opening, "
@@ -4722,6 +5292,10 @@ def main() -> None:
                     story_crop_focus,
                     story_topic_hint,
                     story_search_details,
+                    district=district,
+                    sowing_date=sowing_date,
+                    crop_stage=crop_stage,
+                    weather_notes=weather_notes,
                 )
                 research, sources = safe_generate_text(
                     client,
@@ -4760,6 +5334,11 @@ def main() -> None:
                 value=st.session_state["story_research"],
                 height=300,
                 key="story_research_notes",
+            )
+            verified_label_claim_chemicals, agresco_block = render_topic_evidence_selectors(
+                "story",
+                story_selected_topic,
+                st.session_state.get("story_saved_crop_focus", story_crop_focus),
             )
             story_target_magazine = target_magazine_selector(
                 "story_target_magazine",
@@ -4969,6 +5548,8 @@ def main() -> None:
                 )
 
     with tab_farm_wisdom:
+        verified_label_claim_chemicals = st.session_state.get("wisdom_ppqs_verified", "")
+        agresco_block = st.session_state.get("wisdom_agresco_block", "")
         st.subheader("Farm Wisdom Observation Prompt Workflow")
         st.write(
             "This tab adds the new master prompt style: observation first, "
@@ -5031,6 +5612,10 @@ def main() -> None:
                     wisdom_season_context,
                     wisdom_target_magazine,
                     wisdom_search_details,
+                    district=district,
+                    sowing_date=sowing_date,
+                    crop_stage=crop_stage,
+                    weather_notes=weather_notes,
                 )
                 research, sources = safe_generate_text(
                     client,
@@ -5071,6 +5656,11 @@ def main() -> None:
                 value=st.session_state["wisdom_research"],
                 height=300,
                 key="wisdom_research_notes",
+            )
+            verified_label_claim_chemicals, agresco_block = render_topic_evidence_selectors(
+                "wisdom",
+                wisdom_selected_topic,
+                st.session_state.get("wisdom_saved_crop_focus", wisdom_crop_focus),
             )
             wisdom_article_target_magazine = target_magazine_selector(
                 "wisdom_article_target_magazine",
@@ -5283,6 +5873,8 @@ def main() -> None:
                 )
 
     with tab_field_discovery:
+        verified_label_claim_chemicals = st.session_state.get("discovery_ppqs_verified", "")
+        agresco_block = st.session_state.get("discovery_agresco_block", "")
         st.subheader("Field Discovery Prompt Workflow")
         st.write(
             "This tab adds the new master prompt style: scene first, visual "
@@ -5345,6 +5937,10 @@ def main() -> None:
                     discovery_season_context,
                     discovery_target_magazine,
                     discovery_search_details,
+                    district=district,
+                    sowing_date=sowing_date,
+                    crop_stage=crop_stage,
+                    weather_notes=weather_notes,
                 )
                 research, sources = safe_generate_text(
                     client,
@@ -5385,6 +5981,11 @@ def main() -> None:
                 value=st.session_state["discovery_research"],
                 height=300,
                 key="discovery_research_notes",
+            )
+            verified_label_claim_chemicals, agresco_block = render_topic_evidence_selectors(
+                "discovery",
+                discovery_selected_topic,
+                st.session_state.get("discovery_saved_crop_focus", discovery_crop_focus),
             )
             discovery_article_target_magazine = target_magazine_selector(
                 "discovery_article_target_magazine",
@@ -5597,6 +6198,8 @@ def main() -> None:
                 )
 
     with tab_farmer_engagement:
+        verified_label_claim_chemicals = st.session_state.get("engagement_ppqs_verified", "")
+        agresco_block = st.session_state.get("engagement_agresco_block", "")
         st.subheader("Farmer Engagement Prompt Workflow")
         st.write(
             "This tab uses the new farmer-engagement style: farmer hook, field story, "
@@ -5666,6 +6269,10 @@ def main() -> None:
                     engagement_season_context,
                     engagement_target_magazine,
                     engagement_search_details,
+                    district=district,
+                    sowing_date=sowing_date,
+                    crop_stage=crop_stage,
+                    weather_notes=weather_notes,
                 )
                 research, sources = safe_generate_text(
                     client,
@@ -5706,6 +6313,11 @@ def main() -> None:
                 value=st.session_state["engagement_research"],
                 height=300,
                 key="engagement_research_notes",
+            )
+            verified_label_claim_chemicals, agresco_block = render_topic_evidence_selectors(
+                "engagement",
+                engagement_selected_topic,
+                st.session_state.get("engagement_saved_crop_focus", engagement_crop_focus),
             )
             engagement_article_target_magazine = target_magazine_selector(
                 "engagement_article_target_magazine",
@@ -5937,7 +6549,10 @@ def main() -> None:
             subject_area,
             crop_focus,
             article_length,
-            verified_label_claim_chemicals,
+            district,
+            sowing_date,
+            crop_stage,
+            weather_notes,
         )
 
 
